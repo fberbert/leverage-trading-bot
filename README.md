@@ -3,6 +3,10 @@ A real-time Bitcoin price monitor with sound alert.
 
 This script fetches the latest Bitcoin price in USD from the Binance API and displays it in a minimalist GUI window using Tkinter. The window also includes an input field to set a custom alert price, which, when reached, triggers a sound alert.
 
+## Screenshot
+
+![Bitcoin Price Monitor Screenshot](screenshot.jpg)
+
 ## Requirements
 - Python 3.x
 - `tkinter` for the GUI (comes pre-installed with Python on most platforms)
