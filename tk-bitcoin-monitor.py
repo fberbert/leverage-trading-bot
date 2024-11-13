@@ -1,89 +1,60 @@
 #!/usr/bin/env python3
 """
 tk-bitcoin-monitor.py
-Real-time Bitcoin Price Monitor with Sound Alert.
+Real-time Bitcoin Price Monitor with Sound Alert using WebSockets.
 
 Requirements:
 - Python 3
 - tkinter
 - pygame
+- kucoin-python
+- python-dotenv
 
 To install requirements, run:
 
-$ pip install tkinter pygame
+$ pip install pygame kucoin-python python-dotenv
 
-Source: Binance API
-
-Author: Fábio Berbert de Paula
-Repository: https://github.com/fberbert/tk-bitcoin
+Source: KuCoin API WebSocket
 """
 
-import urllib.request
-import json
 import os
 import tkinter as tk
 import pygame
+import asyncio
+import socket
+import threading
+from dotenv import load_dotenv
+from kucoin.client import WsToken
+from kucoin.ws_client import KucoinWsClient
 
-def get_btc_usd_price():
-    """Fetches the latest Bitcoin price in USD from the Binance API."""
-    # api_url = 'https://api.binance.com/api/v3/ticker/price?symbol=BTCUSDT'
+# Load API keys from .env file
+load_dotenv()
+API_KEY = os.getenv("KUCOIN_API_KEY")
+API_SECRET = os.getenv("KUCOIN_API_SECRET")
+API_PASSWORD = os.getenv("KUCOIN_API_PASSWORD")
 
-    """Fetches the latest Bitcoin price in USD from the Kucoin API."""
-    api_url = 'https://api.kucoin.com/api/v1/market/orderbook/level1?symbol=BTC-USDT'
+# Sound alert path
+sound_alert = os.path.join(os.path.dirname(__file__), "correct-chime.mp3")
 
-    try:
-        with urllib.request.urlopen(api_url) as url:
-            data = json.loads(url.read().decode())
-            price = float(data['data']['price'])
-            return price
-    except Exception as e:
-        price_label.config(text=f"Error: {e}")
-        return None
+# Initialize Tkinter GUI
+root = tk.Tk()
+root.geometry("100x60+0+0")
+root.attributes("-topmost", True)
+root.wm_attributes("-type", "splash")
+root.configure(bg="black")
+root.bind('<Escape>', lambda e: root.quit())
+root.bind('q', lambda e: root.quit())
 
-def update_price(event=None):
-    """Updates the displayed price and checks if the alert threshold has been reached."""
-    global last_price
-    global direction
+price_label = tk.Label(root, font=("Arial", 12), fg="white", bg="black")
+price_label.pack(expand=True)
 
-    price = get_btc_usd_price()
-    alert_price = float(alert_entry.get())
+alert_entry = tk.Entry(root, font=("Arial", 10), bg="gray", fg="black")
+alert_entry.pack()
+alert_entry.insert(0, "0")
+alert_price = float(alert_entry.get())
 
-    if price:
-        formatted_price = f"${price:,.2f}"
-        price_label.config(text=formatted_price)
-
-        # Check if the price reached the alert level
-        try:
-            if price >= last_price:
-                price_label.config(fg="green")
-            elif price == alert_price:
-                price_label.config(fg="yellow")
-            else:
-                price_label.config(fg="red")
-        except ValueError:
-            pass  # Ignore if alert entry is not a valid value
-
-        # Define alert direction
-        if event == "Alert":
-            direction = "up" if price >= alert_price else "down"
-
-        # Handle alert flashing and sound playback
-        if direction == "up" and price <= alert_price:
-            flash_label("green")
-            play_sound()
-            direction = ""
-        elif direction == "down" and price >= alert_price:
-            flash_label("red")
-            play_sound()
-            direction = ""
-
-        last_price = price
-    root.after(5000, update_price)  # Refresh every 5 seconds
-
-def flash_label(color):
-    """Flashes the price label in the specified color."""
-    for i in range(5):
-        price_label.after(1000 * i, lambda c="white" if i % 2 else color: price_label.config(fg=c))
+last_price = 0
+direction = ""
 
 def play_sound():
     """Plays an alert sound."""
@@ -91,42 +62,74 @@ def play_sound():
     pygame.mixer.music.load(sound_alert)
     pygame.mixer.music.play()
 
-def close_window(event=None):
-    """Closes the window."""
-    root.destroy()
+def flash_label(color):
+    """Flashes the price label in the specified color."""
+    for i in range(5):
+        price_label.after(500 * i, lambda c="white" if i % 2 else color: price_label.config(fg=c))
 
-# Window configuration
-root = tk.Tk()
-# root.overrideredirect(True)  # Removes window borders and title bar
-root.geometry("100x60+0+0") # Window size
-root.attributes("-topmost", True)  # Keeps the window on top
-root.wm_attributes("-type", "splash")  # Hides the window from the taskbar
-root.bind('<Escape>', close_window)  # Shortcut to close the window
+async def handle_message(msg):
+    """Handles incoming WebSocket messages and updates the price in the GUI."""
+    global last_price, direction, alert_price
 
+    if msg['topic'] == '/market/ticker:BTC-USDT':
+        price = float(msg['data']['price'])
+        formatted_price = f"${price:,.2f}"
+        price_label.config(text=formatted_price)
 
-# Background and font colors
-root.configure(bg="black")
-# root.wm_attributes("-alpha", 0.95)  # Ajusta a transparência (se desejado)
-# root.wm_title("Bitcoin Monitor")  # Define o título temporariamente, mesmo que não seja visível
-# root.resizable(False, False)  # Impede redimensionamento da janela
+        # Update alert price from entry field
+        try:
+            alert_price = float(alert_entry.get())
+        except ValueError:
+            pass
 
-price_label = tk.Label(root, font=("Arial", 12), fg="white", bg="black")
-price_label.pack(expand=True)
+        # Change label color based on price movement
+        if price > last_price:
+            price_label.config(fg="green")
+        elif price < last_price:
+            price_label.config(fg="red")
 
-# Alert price entry
-alert_entry = tk.Entry(root, font=("Arial", 10), bg="gray", fg="black")
-alert_entry.pack()
-alert_entry.insert(0, "0")  # Default value
-alert_entry.bind("<Return>", lambda event: update_price(event="Alert"))
+        # Check alert conditions
+        if price >= alert_price and direction != "up":
+            play_sound()
+            direction = "up"
+        elif price <= alert_price and direction != "down":
+            play_sound()
+            direction = "down"
 
-# sound alert is in the same folder as the script
-sound_alert = os.path.join(os.path.dirname(__file__), "correct-chime.mp3")
+        last_price = price
 
-# Start price update loop
-last_price = 0
-direction = ""
-update_price()
+async def update_price_via_websocket():
+    print("Initializing WebSocket client and subscribing to BTC-USDT ticker updates.")
+    """Initializes WebSocket client and subscribes to BTC-USDT ticker updates."""
+    client = WsToken(key=API_KEY, secret=API_SECRET, passphrase=API_PASSWORD)
 
-# Start the GUI loop
-root.mainloop()
+    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
+    address = ('api.kucoin.com',443)
+    sock.connect(address)
+
+    # ws_client = await KucoinWsClient.create(None, client, handle_message, private=False)
+    ws_client = await KucoinWsClient.create(None, client, handle_message, private=False,sock=sock)
+
+    print("Subscribing to BTC-USDT ticker updates.")
+    await ws_client.subscribe('/market/ticker:BTC-USDT')
+
+    while True:
+        await asyncio.sleep(1)  # Keep the loop alive
+
+def start_websocket_loop():
+    """Starts the WebSocket event loop in a separate thread."""
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+    loop.run_until_complete(update_price_via_websocket())
+
+def start_gui():
+    """Starts the Tkinter main loop."""
+    root.mainloop()
+
+if __name__ == "__main__":
+    # Run the WebSocket loop in a separate thread
+    threading.Thread(target=start_websocket_loop, daemon=True).start()
+    # Start the Tkinter GUI loop
+    start_gui()
 
