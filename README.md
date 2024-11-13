@@ -8,7 +8,6 @@ This script fetches the latest Bitcoin price in USD from the Binance API and dis
 <p align="center">
   <img src="screenshot.jpg" alt="Bitcoin Price Monitor Screenshot">
 </p>
-![Bitcoin Price Monitor Screenshot](screenshot.jpg)
 
 ## Requirements
 - Python 3.x
