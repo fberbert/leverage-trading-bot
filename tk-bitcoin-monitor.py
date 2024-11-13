@@ -22,6 +22,7 @@ import tkinter as tk
 import pygame
 import asyncio
 import socket
+import time
 import threading
 from dotenv import load_dotenv
 from kucoin.client import WsToken
@@ -99,23 +100,29 @@ async def handle_message(msg):
         last_price = price
 
 async def update_price_via_websocket():
-    print("Initializing WebSocket client and subscribing to BTC-USDT ticker updates.")
-    """Initializes WebSocket client and subscribes to BTC-USDT ticker updates."""
-    client = WsToken(key=API_KEY, secret=API_SECRET, passphrase=API_PASSWORD)
-
-    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
-    address = ('api.kucoin.com',443)
-    sock.connect(address)
-
-    # ws_client = await KucoinWsClient.create(None, client, handle_message, private=False)
-    ws_client = await KucoinWsClient.create(None, client, handle_message, private=False,sock=sock)
-
-    print("Subscribing to BTC-USDT ticker updates.")
-    await ws_client.subscribe('/market/ticker:BTC-USDT')
-
     while True:
-        await asyncio.sleep(1)  # Keep the loop alive
+        try:
+            # Connect to KuCoin WebSocket
+            client = WsToken(key=API_KEY, secret=API_SECRET, passphrase=API_PASSWORD)
+            ws_client = await KucoinWsClient.create(None, client, handle_message, private=False)
+
+            await ws_client.subscribe('/market/ticker:BTC-USDT')
+
+            # Main loop to keep the WebSocket connection alive
+            while True:
+                await asyncio.sleep(1)  # Keep the event loop running
+
+        except Exception as e:
+            print(f"Connection error: {e}. Retrying in 5 seconds...")
+            time.sleep(5)  # Pausa antes de tentar reconectar
+
+        finally:
+            # Try to close the WebSocket client at the end of the loop to clean up resources
+            try:
+                await ws_client.close()
+            except:
+                pass
+
 
 def start_websocket_loop():
     """Starts the WebSocket event loop in a separate thread."""
