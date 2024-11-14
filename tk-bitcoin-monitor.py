@@ -21,7 +21,6 @@ import os
 import tkinter as tk
 import pygame
 import asyncio
-import socket
 import time
 import threading
 from dotenv import load_dotenv
