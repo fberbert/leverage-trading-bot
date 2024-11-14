@@ -100,13 +100,15 @@ async def handle_message(msg):
         last_price = price
 
 async def update_price_via_websocket():
+    ws_client = None
+
     while True:
         try:
             # Connect to KuCoin WebSocket
-            client = WsToken(key=API_KEY, secret=API_SECRET, passphrase=API_PASSWORD)
-            ws_client = await KucoinWsClient.create(None, client, handle_message, private=False)
-
-            await ws_client.subscribe('/market/ticker:BTC-USDT')
+            if ws_client is None:
+                client = WsToken(key=API_KEY, secret=API_SECRET, passphrase=API_PASSWORD)
+                ws_client = await KucoinWsClient.create(None, client, handle_message, private=False)
+                await ws_client.subscribe('/market/ticker:BTC-USDT')
 
             # Main loop to keep the WebSocket connection alive
             while True:
@@ -115,14 +117,7 @@ async def update_price_via_websocket():
         except Exception as e:
             print(f"Connection error: {e}. Retrying in 5 seconds...")
             time.sleep(5)  # Pausa antes de tentar reconectar
-
-        finally:
-            # Try to close the WebSocket client at the end of the loop to clean up resources
-            try:
-                await ws_client.close()
-            except:
-                pass
-
+            ws_client = None
 
 def start_websocket_loop():
     """Starts the WebSocket event loop in a separate thread."""
