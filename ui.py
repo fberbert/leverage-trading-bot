@@ -676,7 +676,7 @@ class MainWindow(QWidget):
             else:
                 print("Nenhum sinal claro identificado. Continuando monitoramento...")
                 # Continuar monitorando
-                QTimer.singleShot(5000, check_signal)  # Verificar novamente em 5 segundos
+                QTimer.singleShot(60000, check_signal)  # Verificar novamente em 60 segundos
 
         # Iniciar a primeira verificação imediatamente
         check_signal()

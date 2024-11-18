@@ -22,8 +22,8 @@ class PriceWebsocketClient(QThread):
 
     async def handle_message(self, msg):
         """Lida com mensagens recebidas e emite o preço."""
-        if msg['topic'] == '/contractMarket/tickerV2:XBTUSDTM':
-            price = float(msg['data']['bestAskPrice'])
+        if msg['topic'] == '/contractMarket/ticker:XBTUSDTM':
+            price = float(msg['data']['price'])
             self.price_updated.emit(price)
 
     async def update_price_via_websocket(self):
@@ -32,7 +32,7 @@ class PriceWebsocketClient(QThread):
                 if self.ws_client is None:
                     client = WsToken(key=API_KEY, secret=API_SECRET, passphrase=API_PASSWORD)
                     self.ws_client = await KucoinWsClient.create(None, client, self.handle_message, private=False)
-                    await self.ws_client.subscribe('/contractMarket/tickerV2:XBTUSDTM')
+                    await self.ws_client.subscribe('/contractMarket/ticker:XBTUSDTM')
                 while True:
                     await asyncio.sleep(1)
             except Exception as e:

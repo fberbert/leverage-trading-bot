@@ -1,6 +1,6 @@
 # Leverage Trading Bot
 
-A real-time trading bot designed for scalping on cryptocurrency markets. This bot fetches real-time Bitcoin price data using the KuCoin API and employs technical analysis strategies like SMA (Simple Moving Average), RSI (Relative Strength Index), and volume analysis to decide when to enter or exit trades. The bot supports automated leverage trading and includes configurable settings for precise control.
+A real-time trading bot designed for scalping on cryptocurrency markets. This bot fetches real-time Bitcoin price data using the KuCoin API and employs technical analysis strategies like SMA (Simple Moving Average), RSI (Relative Strength Index), and volume analysis to decide when to enter trades. The bot supports automated leverage trading and includes configurable settings for precise control.
 
 ## Features
 
@@ -12,7 +12,6 @@ A real-time trading bot designed for scalping on cryptocurrency markets. This bo
     - Between 31%-50%: Default 8%
     - Above 50%: Default 10%
   - Dynamic leverage control.
-  - Trade direction options (Invert, Keep, Long, Short).
 - **Custom Alerts**: Set custom price alerts that trigger sound notifications.
 - **Graphical User Interface**: Minimalist GUI built with PyQt5 for configuration and trade monitoring.
 - **Error Handling**: Resilient to API data gaps and adapts to market conditions.
@@ -49,9 +48,9 @@ $ pip install PyQt5 numpy requests python-dotenv pygame
       KUCOIN_API_PASSWORD=your_api_password
       ```
 
-2. **Run the Bot**: Execute the main script `leverage-trading-bot.py`:
+2. **Run the Bot**: Execute the main script `main.py`:
     ```bash
-    $ python leverage-trading-bot.py
+    $ python3 main.py
     ```
 
 3. **Configure Settings**:

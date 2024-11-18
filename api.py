@@ -220,14 +220,14 @@ def decide_trade_direction(symbol):
     try:
         print(f"Analisando o símbolo {symbol} para decidir a direção do trade...")
 
-        # Intervalo para buscar dados: 25 minutos para obter dados suficientes para SMA e RSI
+        # Intervalo para buscar dados: 50 minutos para obter dados suficientes para SMA e RSI
         end_time = int(time.time() * 1000)
-        start_time = end_time - (60 * 25 * 1000)  # 80 minutos atrás em milissegundos
+        start_time = end_time - (60 * 30 * 5 * 1000)  # 25 posições de 5 minutos atrás em milissegundos
 
-        # URL para granularidade de 1 minuto
+        # URL para granularidade de 5 minutos
         params = {
             'symbol': symbol,
-            'granularity': 1,  # 1 minuto
+            'granularity': 5,  # 5 minutos
             'from': start_time,
             'to': end_time
         }
@@ -278,7 +278,19 @@ def decide_trade_direction(symbol):
             # Sinais Individuais
             sma_signal = 'buy' if sma_short > sma_long else 'sell' if sma_short < sma_long else 'wait'
             rsi_signal = 'buy' if rsi < 30 else 'sell' if rsi > 70 else 'wait'
-            volume_signal = 'buy' if current_volume > avg_volume else 'wait'
+
+            # Volume como confirmação
+            if current_volume > avg_volume:
+                # Se o preço está subindo
+                if close_prices[-1] > close_prices[-2]:
+                    volume_signal = 'buy'
+                # Se o preço está caindo
+                elif close_prices[-1] < close_prices[-2]:
+                    volume_signal = 'sell'
+                else:
+                    volume_signal = 'wait'
+            else:
+                volume_signal = 'wait'
 
             print(f"Sinal SMA: {sma_signal}")
             print(f"Sinal RSI: {rsi_signal}")
