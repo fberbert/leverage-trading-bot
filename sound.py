@@ -4,10 +4,10 @@ from PyQt5.QtCore import QUrl
 
 
 class SoundPlayer:
-    def __init__(self):
+    def __init__(self, sound_file="correct-chime.mp3"):
         # Inicializa o player de mídia para alertas sonoros
         self.player = QMediaPlayer()
-        sound_file_path = os.path.join(os.path.dirname(__file__), "alert.mp3")
+        sound_file_path = os.path.join(os.path.dirname(__file__), "assets/sounds", sound_file)
         if os.path.exists(sound_file_path):
             self.player.setMedia(QMediaContent(QUrl.fromLocalFile(sound_file_path)))
         else:

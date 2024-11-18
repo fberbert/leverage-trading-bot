@@ -6,6 +6,7 @@ import base64
 import requests
 import json
 import uuid
+import numpy as np
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -204,3 +205,96 @@ def open_new_position_market(symbol, side, size, leverage):
 
     except Exception as e:
         print(f"Erro em open_new_position_market: {e}")
+
+
+import time
+import requests
+import numpy as np
+
+def decide_trade_direction(symbol):
+    """
+    Decide a direção do trade com base em dados históricos e uma estratégia combinada.
+    Utiliza Médias Móveis Simples (SMA), Índice de Força Relativa (RSI) e volume para identificar sinais.
+    Retorna 'buy', 'sell' ou 'wait'.
+    """
+    try:
+        print(f"Analisando o símbolo {symbol} para decidir a direção do trade...")
+
+        # Intervalo para buscar dados: 25 minutos para obter dados suficientes para SMA e RSI
+        end_time = int(time.time() * 1000)
+        start_time = end_time - (60 * 25 * 1000)  # 80 minutos atrás em milissegundos
+
+        # URL para granularidade de 1 minuto
+        params = {
+            'symbol': symbol,
+            'granularity': 1,  # 1 minuto
+            'from': start_time,
+            'to': end_time
+        }
+        url = "https://api-futures.kucoin.com/api/v1/kline/query"
+
+        response = requests.get(url, params=params)
+        if response.status_code == 200:
+            data = response.json().get("data", [])
+            print(f"Obtidos {len(data)} pontos de dados.")
+            print(f"Dados: {data}")
+            if len(data) < 25:
+                print("Dados insuficientes para análise.")
+                return 'wait'
+
+            # Extrair preços de fechamento e volumes
+            close_prices = np.array([float(kline[2]) for kline in data])  # Índice 2 é o preço de fechamento
+            volumes = np.array([float(kline[5]) for kline in data])       # Índice 5 é o volume
+
+            # Calcular SMAs
+            sma_short = np.mean(close_prices[-7:])   # SMA de curto prazo (7 períodos)
+            sma_long = np.mean(close_prices[-25:])   # SMA de longo prazo (25 períodos)
+            print(f"SMA curto prazo (7): {sma_short}")
+            print(f"SMA longo prazo (25): {sma_long}")
+
+            # Calcular RSI
+            delta = np.diff(close_prices)
+            up = delta.copy()
+            down = delta.copy()
+            up[up < 0] = 0
+            down[down > 0] = 0
+            period = 14  # Período padrão para RSI
+
+            gain = np.mean(up[-period:])
+            loss = -np.mean(down[-period:])
+            if loss == 0:
+                rsi = 100
+            else:
+                rs = gain / loss
+                rsi = 100 - (100 / (1 + rs))
+            print(f"RSI (14): {rsi}")
+
+            # Análise de Volume
+            avg_volume = np.mean(volumes[-7:])    # Volume médio dos últimos 7 períodos
+            current_volume = volumes[-1]          # Volume do último período
+            print(f"Volume atual: {current_volume}")
+            print(f"Volume médio (7): {avg_volume}")
+
+            # Sinais Individuais
+            sma_signal = 'buy' if sma_short > sma_long else 'sell' if sma_short < sma_long else 'wait'
+            rsi_signal = 'buy' if rsi < 30 else 'sell' if rsi > 70 else 'wait'
+            volume_signal = 'buy' if current_volume > avg_volume else 'wait'
+
+            print(f"Sinal SMA: {sma_signal}")
+            print(f"Sinal RSI: {rsi_signal}")
+            print(f"Sinal Volume: {volume_signal}")
+
+            # Decidir a direção apenas se os três sinais estiverem alinhados
+            if sma_signal == rsi_signal == volume_signal and sma_signal != 'wait':
+                print(f"Sinal de {sma_signal.upper()} confirmado pelos três indicadores.")
+                return sma_signal
+            else:
+                print("Indicadores não estão alinhados. Aguardando.")
+                return 'wait'
+        else:
+            print(f"Erro ao obter dados históricos: {response.status_code}, {response.text}")
+            return 'wait'
+    except Exception as e:
+        print(f"Erro em decide_trade_direction: {e}")
+        return 'wait'
+

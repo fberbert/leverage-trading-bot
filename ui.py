@@ -13,7 +13,8 @@ from api import (
     fetch_open_positions,
     fetch_high_low_prices,
     close_position_market,
-    open_new_position_market
+    open_new_position_market,
+    decide_trade_direction
 )
 
 
@@ -40,8 +41,9 @@ class MainWindow(QWidget):
         self.trailing_stop_16_30 = 5  # Trailing stop entre 16% e 30%
         self.trailing_stop_31_50 = 8  # Trailing stop entre 31% e 50%
         self.trailing_stop_above_50 = 10  # Trailing stop acima de 50%
+        self.monitoring_signal = False  # Flag para indicar se estamos monitorando sinais
         self.initUI()
-        self.sound_player = SoundPlayer()
+        self.sound_player = SoundPlayer("correct-chime.mp3")  # Inicializar o player de som
 
         # Iniciar cliente WebSocket em uma thread separada
         self.price_ws_client = PriceWebsocketClient()
@@ -94,7 +96,7 @@ class MainWindow(QWidget):
                 background: none;
             }
             QCheckBox::indicator:checked {
-                background-color: #a1a1a1;
+                background-color: #55ff55;
             }
             QRadioButton::indicator {
                 border: 1px solid #5a5a5a;
@@ -270,7 +272,8 @@ class MainWindow(QWidget):
         side_layout.addWidget(self.short_radio)
 
         # Adicionar ao layout de configuração
-        config_layout.addRow(side_label, side_layout)
+        # Radio buttons are disabled for now
+        # config_layout.addRow(side_label, side_layout)
 
         # Adicionar o layout ao layout principal
         main_layout.addLayout(config_layout)
@@ -578,15 +581,21 @@ class MainWindow(QWidget):
             # Calcular o lucro/prejuízo percentual
             pnl_percent = (unrealised_pnl / pos_margin) * 100
 
-            print('pnls:', pnl_percent, tracker.get('max_pnl_percent', 0), tracker.get('trigger_stop_loss_percent', default_stop_loss))
+            # print('pnls:', pnl_percent, tracker.get('max_pnl_percent', 0), tracker.get('trigger_stop_loss_percent', default_stop_loss))
 
             # Determinar o stop loss apropriado com base nas novas regras
-            if 3 <= pnl_percent <= 6:
-                calculated_stop_loss = 1
-            elif 7 <= pnl_percent <= 10:
-                calculated_stop_loss = 4  # Stop loss de 4% para lucros entre 7% e 10%
-            elif 11 <= pnl_percent <= 15:
-                calculated_stop_loss = 5  # Stop loss de 5% para lucros entre 11% e 15%
+            # if int(pnl_percent) == 3:
+                # calculated_stop_loss = 1
+            # elif 4 <= pnl_percent <= 5:
+                # calculated_stop_loss = 2
+            # elif 6 <= pnl_percent <= 10:
+                # calculated_stop_loss = 4  # Stop loss de 4% para lucros entre 7% e 10%
+            # elif 11 <= pnl_percent <= 15:
+                # calculated_stop_loss = 5  # Stop loss de 5% para lucros entre 11% e 15%
+
+            # Trailing stops
+            if 2.5 <= pnl_percent <= 15:
+                calculated_stop_loss = pnl_percent - 2.5  # Stop loss de 2.5% para lucros entre 3% e 15%
             elif 16 <= pnl_percent <= 30:
                 calculated_stop_loss = pnl_percent - self.trailing_stop_16_30
             elif 31 <= pnl_percent <= 50:
@@ -611,18 +620,20 @@ class MainWindow(QWidget):
                 if pnl_percent >= 0:
                     # Fechar posição com lucro
                     self.close_position_market(position)
+                    print('position:', position)
                     message = (
-                        f"Posição fechada com lucro de {pnl_percent:.2f}% "
-                        f"(Unrealised PnL: {unrealised_pnl:.2f} USDT) "
-                        f"descontando 12% de taxas, lucro real: {pnl_percent - 12:.2f}%"
+                        f"{position['symbol']} - "
+                        f"Taxas: {position['realLeverage']*2*0.06:.2f}% - "
+                        f"LUCRO de {pnl_percent:.2f}% -> {pnl_percent - (position['realLeverage']*2*0.06):.2f}% "
                     )
                     self.show_alert_message(message)
                 else:
                     # Fechar posição com prejuízo
                     self.close_position_market(position)
                     message = (
-                        f"Posição fechada com prejuízo de {pnl_percent:.2f}% "
-                        f"(Unrealised PnL: {unrealised_pnl:.2f} USDT)"
+                        f"{position['symbol']} - "
+                        f"Taxas: {position['realLeverage']*2*0.06:.2f}% - "
+                        f"Prejuízo de {pnl_percent:.2f}% -> {pnl_percent - (position['realLeverage']*2*0.06):.2f}% "
                     )
                     self.show_closed_positions_message(message)
 
@@ -640,33 +651,35 @@ class MainWindow(QWidget):
                 del self.position_trackers[pid]
 
     def open_new_position_after_close(self, closed_position):
-        """Abre uma nova posição automaticamente após fechar uma posição."""
+        """Inicia o monitoramento de sinais para abrir uma nova posição."""
         symbol = closed_position['symbol']
-        current_qty = closed_position['currentQty']
-        previous_side = 'buy' if current_qty > 0 else 'sell'
-
-        # Determinar o lado com base na opção selecionada
-        if self.selected_side_option == 'Invert':
-            side = 'buy' if current_qty < 0 else 'sell'  # Lado oposto
-        elif self.selected_side_option == 'Keep/Invert':
-            side = 'buy' if current_qty < 0 else 'sell'
-            # Selecionar o botão "Keep" após inverter
-            self.keep_radio.setChecked(True)
-        elif self.selected_side_option == 'Keep':
-            side = previous_side  # Mesmo lado da posição fechada
-        elif self.selected_side_option == 'Long':
-            side = 'buy'  # Sempre comprar
-        elif self.selected_side_option == 'Short':
-            side = 'sell'  # Sempre vender
-        else:
-            # Padrão é inverter
-            side = 'buy' if current_qty < 0 else 'sell'
-
-        size = abs(current_qty)
         leverage = self.default_leverage  # Alavancagem padrão
+        size = abs(closed_position['currentQty'])  # Tamanho da posição anterior
 
-        # Chamar a função para abrir nova posição
-        open_new_position_market(symbol, side, size, leverage)
+        # Iniciar monitoramento de sinais
+        print("Iniciando monitoramento de sinais para nova posição...")
+        self.monitor_trade_signals(symbol, size, leverage)
+
+    def monitor_trade_signals(self, symbol, size, leverage):
+        """Monitora os sinais de trade e abre uma nova posição quando um sinal é identificado."""
+        if self.monitoring_signal:
+            # Já estamos monitorando, evitar chamadas duplicadas
+            return
+        self.monitoring_signal = True
+
+        def check_signal():
+            side = decide_trade_direction(symbol)
+            if side in ['buy', 'sell']:
+                print(f"Sinal identificado: {side.upper()}. Abrindo nova posição.")
+                open_new_position_market(symbol, side, size, leverage)
+                self.monitoring_signal = False  # Parar o monitoramento
+            else:
+                print("Nenhum sinal claro identificado. Continuando monitoramento...")
+                # Continuar monitorando
+                QTimer.singleShot(5000, check_signal)  # Verificar novamente em 5 segundos
+
+        # Iniciar a primeira verificação imediatamente
+        check_signal()
 
     def show_alert_message(self, message):
         """Exibe uma mensagem de alerta e toca um som."""
