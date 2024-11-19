@@ -347,9 +347,9 @@ def decide_trade_direction(symbol, rsi_period=14, use_sma=True, use_rsi=True, us
             # Return the decision along with indicator details
             return {
                     "decision": decision,
-                    "sma": f"{sma_short:.2f} > {sma_long:.2f} ({sma_signal})",
-                    "rsi": f"{rsi:.2f} ({rsi_signal})",
-                    "volume": f"{current_volume:.2f} > {avg_volume:.2f} ({volume_signal})"
+                    "sma": f"{int(sma_short)} | {int(sma_long)} ({sma_signal})",
+                    "rsi": f"{int(rsi)} ({rsi_signal})",
+                    "volume": f"{int(current_volume)} now | {int(avg_volume)} avg ({volume_signal})"
                 }
 
         else:

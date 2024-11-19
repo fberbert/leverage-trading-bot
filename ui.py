@@ -314,12 +314,13 @@ class MainWindow(QWidget):
         self.auto_open_checkbox = QCheckBox("Abrir nova posição automaticamente")
         self.auto_open_checkbox.setFont(QFont("Arial", 12))
         self.auto_open_checkbox.setChecked(True)
-        self.auto_open_checkbox.stateChanged.connect(self.toggle_auto_open)
+        self.auto_open_checkbox.stateChanged.connect(lambda state: self.toggle_auto_open(state, self.auto_open_checkbox))
+
         self.auto_open_checkbox.setStyleSheet("QCheckBox { color: white; margin-left: 20px;}")
         main_layout.addWidget(self.auto_open_checkbox)
 
 
-# SMA, RSI, and Volume
+        # SMA, RSI, and Volume
         indicator_layout = QHBoxLayout()
         indicator_layout.setContentsMargins(150, 20, 150, 0)
 
@@ -327,7 +328,7 @@ class MainWindow(QWidget):
         self.use_sma_checkbox.setChecked(self.use_sma)
         self.use_sma_checkbox.setText(self.sma_value)
         self.use_sma_checkbox.setFont(QFont("Arial", 12))
-        self.use_sma_checkbox.stateChanged.connect(self.toggle_auto_open)
+        self.use_sma_checkbox.stateChanged.connect(lambda state: self.toggle_auto_open(state, self.use_sma_checkbox))
         self.use_sma_checkbox.setStyleSheet("QCheckBox { color: white; margin: 20px 0; min-width: 300px;}")
 
         indicator_layout.addWidget(self.use_sma_checkbox)
@@ -336,7 +337,7 @@ class MainWindow(QWidget):
         self.use_rsi_checkbox.setChecked(self.use_rsi)
         self.use_rsi_checkbox.setText(self.rsi_value)
         self.use_rsi_checkbox.setFont(QFont("Arial", 12))
-        self.use_rsi_checkbox.stateChanged.connect(self.toggle_auto_open)
+        self.use_rsi_checkbox.stateChanged.connect(lambda state: self.toggle_auto_open(state, self.use_rsi_checkbox))
         self.use_rsi_checkbox.setStyleSheet("QCheckBox { color: white; margin: 20px 0; min-width: 300px;}")
 
         indicator_layout.addWidget(self.use_rsi_checkbox)
@@ -345,7 +346,7 @@ class MainWindow(QWidget):
         self.use_volume_checkbox.setChecked(self.use_volume)
         self.use_volume_checkbox.setText(self.volume_value)
         self.use_volume_checkbox.setFont(QFont("Arial", 12))
-        self.use_volume_checkbox.stateChanged.connect(self.toggle_auto_open)
+        self.use_volume_checkbox.stateChanged.connect(lambda state: self.toggle_auto_open(state, self.use_volume_checkbox))
         self.use_volume_checkbox.setStyleSheet("QCheckBox { color: white; margin: 20px 0; min-width: 300px;}")
 
         indicator_layout.addStretch()
@@ -397,9 +398,21 @@ class MainWindow(QWidget):
         self.get_indicators_timer.timeout.connect(self.check_decision_indicators)
         self.get_indicators_timer.start(5000)
 
-    def toggle_auto_open(self, state):
-        """Updates the flag to automatically open new positions."""
-        self.auto_open_new_position = state == Qt.Checked
+    def toggle_auto_open(self, state, checkbox=None):
+        """
+        Updates the corresponding flags based on the checkbox state.
+        :param state: The state of the checkbox (Checked/Unchecked).
+        :param checkbox: The checkbox widget that triggered the state change.
+        """
+        if checkbox:
+            if checkbox == self.use_sma_checkbox:
+                self.use_sma = state == Qt.Checked
+            elif checkbox == self.use_rsi_checkbox:
+                self.use_rsi = state == Qt.Checked
+            elif checkbox == self.use_volume_checkbox:
+                self.use_volume = state == Qt.Checked
+        else:
+            self.auto_open_new_position = state == Qt.Checked
 
     def reset_alerts(self):
         self.alert_above_triggered = False
@@ -639,6 +652,8 @@ class MainWindow(QWidget):
             pnl_percent = (unrealised_pnl / pos_margin) * 100
 
             # Determine the appropriate stop loss based on new rules
+            if 4.5 <= pnl_percent <= 6.9:
+                calculated_stop_loss = pnl_percent - 3
             if 7 <= pnl_percent <= 9:
                 calculated_stop_loss = pnl_percent - 5
             elif 10 <= pnl_percent <= 30:
@@ -651,12 +666,15 @@ class MainWindow(QWidget):
                 calculated_stop_loss = self.default_stop_loss  # Use default stop loss
 
             # Update stop loss in tracker if greater than current
-            if 'trigger_stop_loss_percent' not in tracker or calculated_stop_loss > tracker['trigger_stop_loss_percent']:
+            if ('trigger_stop_loss_percent' not in tracker or calculated_stop_loss > tracker['trigger_stop_loss_percent']) or (pnl_percent < 0 and calculated_stop_loss < tracker['trigger_stop_loss_percent']):
                 tracker['trigger_stop_loss_percent'] = calculated_stop_loss
                 print('Updated trigger_stop_loss_percent:', tracker['trigger_stop_loss_percent'])
 
             # Update the maximum profit percentage achieved
             if pnl_percent > tracker.get('max_pnl_percent', 0):
+                tracker['max_pnl_percent'] = pnl_percent
+                print('Updated max_pnl_percent:', tracker['max_pnl_percent'])
+            elif pnl_percent < 0 and pnl_percent < tracker.get('max_pnl_percent', 0):
                 tracker['max_pnl_percent'] = pnl_percent
                 print('Updated max_pnl_percent:', tracker['max_pnl_percent'])
 
