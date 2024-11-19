@@ -1,3 +1,5 @@
+# api.py
+
 import os
 import time
 import hmac
@@ -13,6 +15,40 @@ load_dotenv()
 API_KEY = os.getenv("KUCOIN_API_KEY")
 API_SECRET = os.getenv("KUCOIN_API_SECRET")
 API_PASSWORD = os.getenv("KUCOIN_API_PASSWORD")
+
+def list_usdt_contracts():
+    """Obtains the top 15 futures contracts with USDT sorted by 24h volume."""
+    try:
+        url = "https://api-futures.kucoin.com/api/v1/contracts/active"
+        response = requests.get(url)
+        if response.status_code == 200:
+            data = response.json().get("data", [])
+            print(f"Contratos ativos: {len(data)}")
+            
+            # Filtrar contratos com USDT
+            usdt_contracts = [contract for contract in data if contract.get('rootSymbol') == 'USDT']
+            
+            # Ordenar pelo volume de 24 horas em ordem decrescente
+            usdt_contracts.sort(key=lambda x: x.get("markPrice", 0), reverse=True)
+            
+            # Limitar aos top 15
+            top_15_contracts = usdt_contracts[:15]
+            print(f"Top 15 contratos por preço: {len(top_15_contracts)}")
+
+            # Adicionar XBTUSDTM no início da lista, se existir
+            # xbt_contract = next((contract for contract in data if contract.get('symbol') == 'XBTUSDTM'), None)
+            # if xbt_contract:
+                # print(xbt_contract)
+                # top_15_contracts.insert(0, xbt_contract)
+
+            # print(f"Top 15 contratos por volume: {top_15_contracts}")
+            return top_15_contracts
+        else:
+            print(f"Erro ao obter contratos: {response.status_code}, {response.text}")
+            return []
+    except Exception as e:
+        print(f"Erro ao obter contratos: {e}")
+        return []
 
 
 def fetch_open_positions():
@@ -57,10 +93,9 @@ def fetch_open_positions():
         return []
 
 
-def fetch_high_low_prices():
-    """Obtém os preços High e Low da última hora para XBTUSDTM."""
+def fetch_high_low_prices(symbol):
+    """Obtains the High and Low prices of the last hour for the given symbol."""
     try:
-        symbol = "XBTUSDTM"
         end_time = int(time.time() * 1000)
         start_time = end_time - (60 * 60 * 1000)
         url = f"https://api-futures.kucoin.com/api/v1/kline/query?symbol={symbol}&granularity=1&from={start_time}&to={end_time}"
@@ -206,28 +241,21 @@ def open_new_position_market(symbol, side, size, leverage):
     except Exception as e:
         print(f"Erro em open_new_position_market: {e}")
 
-
-import time
-import requests
-import numpy as np
-
-def decide_trade_direction(symbol):
+def decide_trade_direction(symbol, rsi_period=14, use_sma=True, use_rsi=True, use_volume=False):
     """
-    Decide a direção do trade com base em dados históricos e uma estratégia combinada.
-    Utiliza Médias Móveis Simples (SMA), Índice de Força Relativa (RSI) e volume para identificar sinais.
-    Retorna 'buy', 'sell' ou 'wait'.
+    Decides the trade direction based on historical data and a combined strategy.
+    Uses Simple Moving Averages (SMA), Relative Strength Index (RSI), and volume to identify signals.
+    Returns 'buy', 'sell', or 'wait'.
     """
     try:
-        print(f"Analisando o símbolo {symbol} para decidir a direção do trade...")
-
-        # Intervalo para buscar dados: 50 minutos para obter dados suficientes para SMA e RSI
+        # Interval to fetch data: 50 minutes to get enough data for SMA and RSI
         end_time = int(time.time() * 1000)
-        start_time = end_time - (60 * 30 * 5 * 1000)  # 25 posições de 5 minutos atrás em milissegundos
+        start_time = end_time - (60 * 30 * 5 * 1000)  # 25 periods of 5 minutes ago in milliseconds
 
-        # URL para granularidade de 5 minutos
+        # URL for 5-minute granularity
         params = {
             'symbol': symbol,
-            'granularity': 5,  # 5 minutos
+            'granularity': 5,  # 5 minutes
             'from': start_time,
             'to': end_time
         }
@@ -236,29 +264,26 @@ def decide_trade_direction(symbol):
         response = requests.get(url, params=params)
         if response.status_code == 200:
             data = response.json().get("data", [])
-            print(f"Obtidos {len(data)} pontos de dados.")
-            print(f"Dados: {data}")
             if len(data) < 25:
-                print("Dados insuficientes para análise.")
-                return 'wait'
+                print(f"Insufficient data for analysis ({len(data)} periods)")
+                return {'decision': 'wait', 'sma': 'N/A', 'rsi': 'N/A', 'volume': 'N/A'}
 
-            # Extrair preços de fechamento e volumes
-            close_prices = np.array([float(kline[2]) for kline in data])  # Índice 2 é o preço de fechamento
-            volumes = np.array([float(kline[5]) for kline in data])       # Índice 5 é o volume
+            # Extract closing prices and volumes
+            close_prices = np.array([float(kline[2]) for kline in data])  # Index 2 is the closing price
+            volumes = np.array([float(kline[5]) for kline in data])       # Index 5 is the volume
 
-            # Calcular SMAs
-            sma_short = np.mean(close_prices[-7:])   # SMA de curto prazo (7 períodos)
-            sma_long = np.mean(close_prices[-25:])   # SMA de longo prazo (25 períodos)
-            print(f"SMA curto prazo (7): {sma_short}")
-            print(f"SMA longo prazo (25): {sma_long}")
+            # Calculate SMAs
+            sma_short = np.mean(close_prices[-7:])   # Short-term SMA (7 periods)
+            sma_long = np.mean(close_prices[-25:])   # Long-term SMA (25 periods)
 
-            # Calcular RSI
+            # Calculate RSI
             delta = np.diff(close_prices)
             up = delta.copy()
             down = delta.copy()
             up[up < 0] = 0
             down[down > 0] = 0
-            period = 14  # Período padrão para RSI
+            # period = 14  # Standard period for RSI
+            period = rsi_period
 
             gain = np.mean(up[-period:])
             loss = -np.mean(down[-period:])
@@ -267,24 +292,21 @@ def decide_trade_direction(symbol):
             else:
                 rs = gain / loss
                 rsi = 100 - (100 / (1 + rs))
-            print(f"RSI (14): {rsi}")
 
-            # Análise de Volume
-            avg_volume = np.mean(volumes[-7:])    # Volume médio dos últimos 7 períodos
-            current_volume = volumes[-1]          # Volume do último período
-            print(f"Volume atual: {current_volume}")
-            print(f"Volume médio (7): {avg_volume}")
+            # Volume analysis
+            avg_volume = np.mean(volumes[-7:])    # Average volume of the last 7 periods
+            current_volume = volumes[-1]          # Volume of the last period
 
-            # Sinais Individuais
+            # Individual signals
             sma_signal = 'buy' if sma_short > sma_long else 'sell' if sma_short < sma_long else 'wait'
             rsi_signal = 'buy' if rsi < 30 else 'sell' if rsi > 70 else 'wait'
 
-            # Volume como confirmação
+            # Volume as confirmation
             if current_volume > avg_volume:
-                # Se o preço está subindo
+                # If the price is rising
                 if close_prices[-1] > close_prices[-2]:
                     volume_signal = 'buy'
-                # Se o preço está caindo
+                # If the price is falling
                 elif close_prices[-1] < close_prices[-2]:
                     volume_signal = 'sell'
                 else:
@@ -292,21 +314,58 @@ def decide_trade_direction(symbol):
             else:
                 volume_signal = 'wait'
 
-            print(f"Sinal SMA: {sma_signal}")
-            print(f"Sinal RSI: {rsi_signal}")
-            print(f"Sinal Volume: {volume_signal}")
-
-            # Decidir a direção apenas se os três sinais estiverem alinhados
-            if sma_signal == rsi_signal == volume_signal and sma_signal != 'wait':
-                print(f"Sinal de {sma_signal.upper()} confirmado pelos três indicadores.")
-                return sma_signal
+            # Decide the direction based on the active indicators
+            if use_sma and use_rsi and use_volume:
+                if sma_signal == rsi_signal == volume_signal and sma_signal != 'wait':
+                    decision = sma_signal
+                else:
+                    decision = 'wait'
+            elif use_sma and use_rsi:
+                if sma_signal == rsi_signal and sma_signal != 'wait':
+                    decision = sma_signal
+                else:
+                    decision = 'wait'
+            elif use_sma and use_volume:
+                if sma_signal == volume_signal and sma_signal != 'wait':
+                    decision = sma_signal
+                else:
+                    decision = 'wait'
+            elif use_rsi and use_volume:
+                if rsi_signal == volume_signal and rsi_signal != 'wait':
+                    decision = rsi_signal
+                else:
+                    decision = 'wait'
+            elif use_sma:
+                decision = sma_signal if sma_signal != 'wait' else 'wait'
+            elif use_rsi:
+                decision = rsi_signal if rsi_signal != 'wait' else 'wait'
+            elif use_volume:
+                decision = volume_signal if volume_signal != 'wait' else 'wait'
             else:
-                print("Indicadores não estão alinhados. Aguardando.")
-                return 'wait'
+                decision = 'wait'  # Default to wait if no indicator is active
+
+            # Return the decision along with indicator details
+            return {
+                    "decision": decision,
+                    "sma": f"{sma_short:.2f} > {sma_long:.2f} ({sma_signal})",
+                    "rsi": f"{rsi:.2f} ({rsi_signal})",
+                    "volume": f"{current_volume:.2f} > {avg_volume:.2f} ({volume_signal})"
+                }
+
         else:
             print(f"Erro ao obter dados históricos: {response.status_code}, {response.text}")
-            return 'wait'
+            return {
+                "decision": "wait",
+                "sma": "Erro",
+                "rsi": "Erro",
+                "volume": "Erro"
+            }
     except Exception as e:
         print(f"Erro em decide_trade_direction: {e}")
-        return 'wait'
+        return {
+            "decision": "wait",
+            "sma": "Erro",
+            "rsi": "Erro",
+            "volume": "Erro"
+        }
 
