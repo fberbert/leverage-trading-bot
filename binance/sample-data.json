@@ -1,0 +1,108 @@
+Asset info: {
+  'baseAsset': {
+    'asset': 'BTC'
+ 'borrowEnabled': True
+ 'borrowed': '0'
+ 'free': '0.0001998'
+ 'interest': '0'
+ 'locked': '0'
+ 'netAsset': '0.0001998'
+ 'netAssetOfBtc': '0.0001998'
+ 'repayEnabled': True
+ 'totalAsset': '0.0001998'}
+ 'quoteAsset': {'asset': 'USDT'
+ 'borrowEnabled': True
+ 'borrowed': '18'
+ 'free': '8.37703052'
+ 'interest': '0.00041985'
+ 'locked': '0'
+ 'netAsset': '-9.62338933'
+ 'netAssetOfBtc': '-0.00009772'
+ 'repayEnabled': True
+ 'totalAsset': '8.37703052'
+ }
+ 'symbol': 'BTCUSDT'
+ 'isolatedCreated': True
+ 'marginLevel': '1.5584268'
+ 'marginLevelStatus': 'EXCESSIVE'
+ 'marginRatio': '10'
+ 'indexPrice': '98475.00617021'
+ 'liquidatePrice': '52669.72133383'
+ 'liquidateRate': '-46.51463'
+ 'tradeEnabled': True
+ 'enabled': True
+ }
+
+
+Asset info: {
+  'baseAsset': {
+   'asset': 'BTC'
+   'borrowEnabled': True
+   'borrowed': '0'
+   'free': '0.0000098'
+   'interest': '0'
+   'locked': '0'
+   'netAsset': '0.0000098'
+   'netAssetOfBtc': '0.0000098'
+   'repayEnabled': True
+   'totalAsset': '0.0000098'
+   }
+ 'quoteAsset': {
+   'asset': 'USDT'
+ 'borrowEnabled': True
+ 'borrowed': '0'
+ 'free': '9.10094542'
+ 'interest': '0'
+ 'locked': '0'
+ 'netAsset': '9.10094542'
+ 'netAssetOfBtc': '0.00009227'
+ 'repayEnabled': True
+ 'totalAsset': '9.10094542'
+ }
+ 'symbol': 'BTCUSDT'
+ 'isolatedCreated': True
+ 'marginLevel': '999'
+ 'marginLevelStatus': 'EXCESSIVE'
+ 'marginRatio': '10'
+ 'indexPrice': '98633.73489362'
+ 'liquidatePrice': '0'
+ 'liquidateRate': '0'
+ 'tradeEnabled': True
+ 'enabled': True}
+
+
+{
+'baseAsset': {
+   'asset': 'BTC'
+   'borrowEnabled': True
+   'borrowed': '0'
+   'free': '0.00100899'
+   'interest': '0'
+   'locked': '0'
+   'netAsset': '0.00100899'
+   'netAssetOfBtc': '0.00100899'
+   'repayEnabled': True
+   'totalAsset': '0.00100899'
+ }
+ 'quoteAsset': {
+   'asset': 'USDT'
+   'borrowEnabled': True
+   'borrowed': '90'
+   'free': '0.61560361'
+   'interest': '0.01841609'
+   'locked': '0'
+   'netAsset': '-89.40281248'
+   'netAssetOfBtc': '-0.00090819'
+   'repayEnabled': True
+   'totalAsset': '0.61560361'
+ }
+ 'symbol': 'BTCUSDT'
+ 'isolatedCreated': True
+ 'marginLevel': '1.110227'
+ 'marginLevelStatus': 'NORMAL'
+ 'marginRatio': '10'
+ 'indexPrice': '98440.29425532'
+ 'liquidatePrice': '93067.0604114'
+ 'liquidateRate': '-5.458368'
+ 'tradeEnabled': True
+ 'enabled': True

@@ -39,7 +39,7 @@ class MainWindow(QWidget):
         self.position_trackers = {}  # Dictionary to track positions for auto-closing
         self.auto_open_new_position = True  # Flag to open new positions automatically
         self.default_leverage = 20  # Default leverage value
-        self.default_stop_loss = -20  # Default stop loss value
+        self.default_stop_loss = -3.5  # Default stop loss value
         # New variables for trailing stops
         self.trailing_stop_16_30 = 5  # Trailing stop between 16%-30%
         self.trailing_stop_31_50 = 8  # Trailing stop between 31%-50%
@@ -50,7 +50,7 @@ class MainWindow(QWidget):
         self.rsi_value = "RSI: 0.00"
         self.volume_value = "Volume: 0.00"
         self.default_contract_qtd = 1  # New variable for default contract quantity
-        self.rsi_period = 14  # Default RSI value
+        self.rsi_period = 7  # Default RSI value
         self.use_sma = True  # Default to use SMA
         self.use_rsi = True
         self.use_volume = False
@@ -277,7 +277,7 @@ class MainWindow(QWidget):
         config_right_layout.addRow(alert_below_label, self.alert_entry_below)
 
         # Input for default_contract_qtd
-        default_contract_qtd_label = QLabel("Default Contract Quantity:")
+        default_contract_qtd_label = QLabel("Contract Quantity:")
         default_contract_qtd_label.setFont(QFont("Arial", 12))
         self.default_contract_qtd_input = QLineEdit(str(self.default_contract_qtd))
         self.default_contract_qtd_input.setFont(QFont("Arial", 12))
@@ -285,12 +285,47 @@ class MainWindow(QWidget):
         config_right_layout.addRow(default_contract_qtd_label, self.default_contract_qtd_input)
 
         # Input for RSI period
-        rsi_label = QLabel("RSI:")
+        rsi_label = QLabel("RSI period:")
         rsi_label.setFont(QFont("Arial", 12))
         self.rsi_period_input = QLineEdit(str(self.rsi_period))
         self.rsi_period_input.setFont(QFont("Arial", 12))
         self.rsi_period_input.setFixedWidth(100)
         config_right_layout.addRow(rsi_label, self.rsi_period_input)
+
+        # Add layout to add granularity radio buttons
+        # 2 radio buttons, granularity 1m and 5m
+        granularity_layout = QHBoxLayout()
+        granularity_layout.setContentsMargins(0, 0, 0, 0)
+        granularity_layout.setSpacing(0)
+
+        # granularity label
+        granularity_label = QLabel("Granularity:")
+        granularity_label.setFont(QFont("Arial", 12))
+        granularity_layout.addWidget(granularity_label)
+        # add margin to the right of label
+        granularity_layout.addSpacing(70)
+
+
+        # create a radio button for 1m
+        self.granularity_1m_checkbox = QCheckBox("1m")
+        self.granularity_1m_checkbox.setFont(QFont("Arial", 12))
+        self.granularity_1m_checkbox.setChecked(False)
+        self.granularity_1m_checkbox.setStyleSheet("QCheckBox { color: white; margin-right: 20px;}")
+        self.granularity_1m_checkbox.stateChanged.connect(lambda state: self.select_granularity(state, self.granularity_1m_checkbox))
+        granularity_layout.addWidget(self.granularity_1m_checkbox)
+
+        # create a radio button for 5m
+        self.granularity_5m_checkbox = QCheckBox("5m")
+        self.granularity_5m_checkbox.setFont(QFont("Arial", 12))
+        self.granularity_5m_checkbox.setChecked(True)
+        self.granularity_5m_checkbox.setStyleSheet("QCheckBox { color: white; margin-right: 20px;}")
+        self.granularity_5m_checkbox.stateChanged.connect(lambda state: self.select_granularity(state, self.granularity_5m_checkbox))
+        granularity_layout.addWidget(self.granularity_5m_checkbox)
+
+        # add spacer to the right
+        granularity_layout.addStretch()
+
+        config_right_layout.addRow(granularity_layout)
 
         # Add layouts to config_hbox
         config_hbox.addLayout(config_left_layout)
@@ -414,21 +449,50 @@ class MainWindow(QWidget):
         else:
             self.auto_open_new_position = state == Qt.Checked
 
+    def select_granularity(self, state, checkbox):
+        # Verifica qual checkbox foi clicado e ajusta os estados
+        if checkbox == self.granularity_1m_checkbox:
+            self.granularity_5m_checkbox.setChecked(False)
+            if state != Qt.Checked:
+                self.granularity_1m_checkbox.setChecked(True)
+        elif checkbox == self.granularity_5m_checkbox:
+            self.granularity_1m_checkbox.setChecked(False)
+            if state != Qt.Checked:
+                self.granularity_5m_checkbox.setChecked(True)
+
     def reset_alerts(self):
         self.alert_above_triggered = False
         self.alert_below_triggered = False
 
     def check_parameters_changes(self):
         """Updates variables based on inputs."""
+        print("entrei")
         try:
+            print(f"Valor de entrada para `leverage_input`: {self.leverage_input.text()}")
             new_leverage = int(self.leverage_input.text())
-            new_default_stop_loss = int(self.default_stop_loss_input.text())
-            new_trailing_stop_16_30 = int(self.trailing_stop_16_30_input.text())
-            new_trailing_stop_31_50 = int(self.trailing_stop_31_50_input.text())
-            new_trailing_stop_above_50 = int(self.trailing_stop_above_50_input.text())
+          
+            print(f"Valor de entrada para `default_stop_loss_input`: {self.default_stop_loss_input.text()}")
+            new_default_stop_loss = float(self.default_stop_loss_input.text())
+
+            print(f"Valor de entrada para `trailing_stop_16_30_input`: {self.trailing_stop_16_30_input.text()}")
+            new_trailing_stop_16_30 = float(self.trailing_stop_16_30_input.text())
+
+            print(f"Valor de entrada para `trailing_stop_31_50_input`: {self.trailing_stop_31_50_input.text()}")
+            new_trailing_stop_31_50 = float(self.trailing_stop_31_50_input.text())
+
+            print(f"Valor de entrada para `trailing_stop_above_50_input`: {self.trailing_stop_above_50_input.text()}")
+            new_trailing_stop_above_50 = float(self.trailing_stop_above_50_input.text())
+
+            print(f"Valor de entrada para `alert_entry_above`: {self.alert_entry_above.text()}")
             new_alert_price_above = float(self.alert_entry_above.text())
+
+            print(f"Valor de entrada para `alert_entry_below`: {self.alert_entry_below.text()}")
             new_alert_price_below = float(self.alert_entry_below.text())
+
+            print(f"Valor de entrada para `default_contract_qtd_input`: {self.default_contract_qtd_input.text()}")
             new_default_contract_qtd = int(self.default_contract_qtd_input.text())
+
+            print(f"Valor de entrada para `rsi_period_input`: {self.rsi_period_input.text()}")
             new_rsi_period = int(self.rsi_period_input.text())
 
             if new_leverage != self.default_leverage:
@@ -463,17 +527,31 @@ class MainWindow(QWidget):
            # Indicador visual no botão
             self.save_config_button.setStyleSheet("background-color: #00ff00; color: black;")
             self.save_config_button.setText("Salvo com sucesso!")
+            print("Configurações salvas com sucesso!")
             QTimer.singleShot(500, lambda: self.save_config_button.setStyleSheet("background-color: #333; color: white;"))
             QTimer.singleShot(500, lambda: self.save_config_button.setText("Salvar configurações"))
 
         except ValueError:
+            print(f"Erro ao salvar configurações. Verifique os valores inseridos {ValueError}")
+            self.save_config_button.setStyleSheet("background-color: #ff0000; color: black;")
+            self.save_config_button.setText("Ocorreu um erro!")
+            QTimer.singleShot(500, lambda: self.save_config_button.setStyleSheet("background-color: #333; color: white;"))
+            QTimer.singleShot(500, lambda: self.save_config_button.setText("Salvar configurações"))
             pass
 
     def fetch_open_positions(self):
-        data = fetch_open_positions()
-        self.update_positions_display(data)
-        if not data and self.auto_open_new_position and not self.monitoring_signal:
-            self.open_new_position_after_close(None)
+        try:
+            data = fetch_open_positions()
+            self.update_positions_display(data)
+
+            if not data and self.auto_open_new_position and not self.monitoring_signal:
+                self.open_new_position_after_close(None)
+
+        except Exception as e:
+            # Trata erros da API
+            print(f"Erro ao obter posições: {e}")
+            self.monitoring_signal = False  # Desativa o monitoring_signal
+            self.update_positions_display([])  # Atualiza a interface com dados vazios
 
     def fetch_high_low_prices(self):
         high_price, low_price = fetch_high_low_prices(self.selected_symbol)
@@ -652,11 +730,11 @@ class MainWindow(QWidget):
             pnl_percent = (unrealised_pnl / pos_margin) * 100
 
             # Determine the appropriate stop loss based on new rules
-            if 4.5 <= pnl_percent <= 6.9:
-                calculated_stop_loss = pnl_percent - 3
-            if 7 <= pnl_percent <= 9:
-                calculated_stop_loss = pnl_percent - 5
-            elif 10 <= pnl_percent <= 30:
+            if 0.5 <= pnl_percent <= 15.9:
+                calculated_stop_loss = self.default_stop_loss + pnl_percent
+            # elif 7 <= pnl_percent <= 9:
+                # calculated_stop_loss = pnl_percent - 5
+            elif 16 <= pnl_percent <= 30:
                 calculated_stop_loss = pnl_percent - self.trailing_stop_16_30
             elif 31 <= pnl_percent <= 50:
                 calculated_stop_loss = pnl_percent - self.trailing_stop_31_50
@@ -741,13 +819,15 @@ class MainWindow(QWidget):
                 self.monitoring_signal = False  # Stop monitoring
             else:
                 # Continue monitoring
+                print("Sinal não identificado. Continuando monitoramento...")
                 QTimer.singleShot(5000, check_signal)  # Check again in 5 seconds
 
         # Start the first check immediately
         check_signal()
 
     def check_decision_indicators(self):
-        decisions = decide_trade_direction(self.selected_symbol, self.rsi_period, self.use_sma, self.use_rsi, self.use_volume)
+        granularity = '1' if self.granularity_1m_checkbox.isChecked() else '5'
+        decisions = decide_trade_direction(self.selected_symbol, self.rsi_period, self.use_sma, self.use_rsi, self.use_volume, int(granularity))
         self.decision_value = decisions['decision']
         self.sma_value = f"SMA: {decisions['sma']}"
         self.rsi_value = f"RSI: {decisions['rsi']}"

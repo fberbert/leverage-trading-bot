@@ -87,10 +87,10 @@ def fetch_open_positions():
             return data
         else:
             print(f"Erro ao obter posições: {response.status_code}, {response.text}")
-            return []
+            raise Exception(f"Erro ao obter posições: {response.status_code}, {response.text}")
     except Exception as e:
         print(f"Erro ao obter posições: {e}")
-        return []
+        raise Exception(f"Erro ao obter posições: {e}")
 
 
 def fetch_high_low_prices(symbol):
@@ -241,7 +241,7 @@ def open_new_position_market(symbol, side, size, leverage):
     except Exception as e:
         print(f"Erro em open_new_position_market: {e}")
 
-def decide_trade_direction(symbol, rsi_period=14, use_sma=True, use_rsi=True, use_volume=False):
+def decide_trade_direction(symbol, rsi_period=14, use_sma=True, use_rsi=True, use_volume=False, granularity=5):
     """
     Decides the trade direction based on historical data and a combined strategy.
     Uses Simple Moving Averages (SMA), Relative Strength Index (RSI), and volume to identify signals.
@@ -249,13 +249,18 @@ def decide_trade_direction(symbol, rsi_period=14, use_sma=True, use_rsi=True, us
     """
     try:
         # Interval to fetch data: 50 minutes to get enough data for SMA and RSI
+
         end_time = int(time.time() * 1000)
-        start_time = end_time - (60 * 30 * 5 * 1000)  # 25 periods of 5 minutes ago in milliseconds
+        start_time = 0
+        if granularity == 1:
+            start_time = end_time - (60 * 100 * 1 * 1000)  # 100 periods of 1 minutes ago in milliseconds
+        elif granularity == 5:
+            start_time = end_time - (60 * 30 * 5 * 1000) # 30 periods of 5 minutes ago in milliseconds
 
         # URL for 5-minute granularity
         params = {
             'symbol': symbol,
-            'granularity': 5,  # 5 minutes
+            'granularity': granularity,
             'from': start_time,
             'to': end_time
         }
