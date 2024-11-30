@@ -37,7 +37,7 @@ def send_signed_request(http_method, url_path, payload={}):
     return response
 
 def get_current_price(symbol):
-    """Gets the current price for the given symbol."""
+    """Obtém o preço atual para o símbolo fornecido."""
     try:
         url = BASE_URL + '/api/v3/ticker/price'
         params = {'symbol': symbol}
@@ -46,78 +46,113 @@ def get_current_price(symbol):
             data = response.json()
             return float(data['price'])
         else:
-            print(f"Error fetching current price: {response.status_code}, {response.text}")
+            print(f"Erro ao obter preço atual: {response.status_code}, {response.text}")
             return 0
     except Exception as e:
-        print(f"Error in get_current_price: {e}")
+        print(f"Erro em get_current_price: {e}")
         return 0
 
-def get_margin_trades(symbol, isIsolated='TRUE'):
-    """Gets the margin trades for a symbol."""
+def get_margin_trades(symbol):
+    """Obtém as negociações de margem para um símbolo."""
     try:
         url_path = '/sapi/v1/margin/myTrades'
         params = {
-            'symbol': symbol,
-            'isIsolated': isIsolated
+            'symbol': symbol
         }
         response = send_signed_request('GET', url_path, params)
         if response.status_code == 200:
             trades = response.json()
             return trades
         else:
-            print(f"Error fetching trades for {symbol}: {response.status_code}, {response.text}")
+            print(f"Erro ao obter negociações para {symbol}: {response.status_code}, {response.text}")
             return []
     except Exception as e:
-        print(f"Error in get_margin_trades: {e}")
+        print(f"Erro em get_margin_trades: {e}")
         return []
 
+
 def fetch_open_positions(position_trackers):
-    """Gets the isolated margin account positions."""
+    """Obtém as posições da conta de margem cruzada."""
     try:
-        url_path = '/sapi/v1/margin/isolated/account'
+        url_path = '/sapi/v1/margin/account'
         response = send_signed_request('GET', url_path)
         if response.status_code == 200:
             data = response.json()
             positions = []
-            for asset_info in data['assets']:
-                symbol = asset_info['symbol']
-                base_asset = asset_info['baseAsset']
-                quote_asset = asset_info['quoteAsset']
 
-                net_asset_base = float(base_asset['netAsset'])
-                net_asset_quote = float(quote_asset['netAsset'])
-                borrowed_base = float(base_asset['borrowed'])
-                borrowed_quote = float(quote_asset['borrowed'])
-                interest_base = float(base_asset['interest'])
-                interest_quote = float(quote_asset['interest'])
+            # Mapeia os ativos para facilitar o acesso
+            assets_info = {asset_info['asset']: asset_info for asset_info in data['userAssets']}
+            total_asset_of_btc = float(data.get('totalCollateralValueInUSDT', 0))
+            total_collateral_value_in_usdt = float(data.get('totalCollateralValueInUSDT', 0))
 
-                # Determine if there is a position
-                position_size = net_asset_base
-                if abs(position_size) >= 1e-5:  # Adjusted to ignore negligible positions
+            for asset_info in data['userAssets']:
+                asset = asset_info['asset']
+                net_asset = float(asset_info['netAsset'])
+                borrowed = float(asset_info['borrowed'])
+                free = float(asset_info['free'])
+                interest = float(asset_info['interest'])
 
-                    print(asset_info)
-                    # Determine position side
-                    if position_size > 0:
+                # Ignora ativos sem posições significativas
+                if net_asset == 0 and borrowed == 0 and interest == 0:
+                    continue
+
+                # Ignora USDT aqui, pois o usamos como referência para determinar posições
+                if asset == 'USDT':
+                    continue
+
+                symbol = asset + 'USDT'
+
+                # Obtém informações do símbolo
+                symbol_info = get_symbol_info(symbol)
+                if symbol_info is None:
+                    continue  # Pula se o símbolo não for encontrado
+
+                # Determina o lado e o tamanho da posição
+                position_size = net_asset  # Quantidade do ativo em questão
+
+                # Verifica se há posição significativa
+                if abs(position_size) >= 1e-5:
+                    # Verifica se há empréstimo associado
+                    usdt_info = assets_info.get('USDT', {})
+                    borrowed_usdt = float(usdt_info.get('borrowed', 0))
+                    net_usdt = float(usdt_info.get('netAsset', 0))
+
+                    if borrowed_usdt > 0 or net_usdt < 0:
+                        # Posição LONG: emprestou USDT para comprar o ativo
                         side = 'LONG'
-                    else:
+                    elif borrowed > 0 or net_asset < 0:
+                        # Posição SHORT: emprestou o ativo para vender por USDT
                         side = 'SHORT'
-
-                    # Get entry price from stored data
-                    position_id = symbol  # Using symbol as the identifier
-                    if position_id in position_trackers:
-                        entry_price = position_trackers[position_id]['position']['entry_price']
-                        leverage = position_trackers[position_id]['position']['leverage']
-                        amount_usd = position_trackers[position_id]['position']['amount_usd']
                     else:
-                        # If entry price is not stored, set to None
-                        entry_price = None
-                        leverage = 10.0  # Default leverage or retrieve from elsewhere
-                        amount_usd = None
+                        # Pode ser um ativo mantido sem margem; ignora
+                        continue
 
-                    # Get current price
+                    # Obtém o preço atual
                     current_price = get_current_price(symbol)
 
-                    # Calculate unrealized PNL
+                    # Tenta obter o preço de entrada dos position_trackers
+                    position_id = symbol  # Usando o símbolo como identificador
+                    if position_id in position_trackers:
+                        entry_price = position_trackers[position_id]['position']['entry_price']
+                        # entry_price = position_trackers['entry_price']
+                        leverage = position_trackers[position_id]['position']['leverage']
+                        # leverage = position_trackers['leverage']
+                    else:
+                        # Se não estiver disponível, estima o preço de entrada
+                        entry_price = None
+                        leverage = 10.0  # Leverage padrão ou ajuste conforme necessário
+
+                    # Se não tivermos o preço de entrada, podemos tentar estimar
+                    if entry_price is None and current_price:
+                        # Estima o preço de entrada usando o valor emprestado e a quantidade do ativo
+
+                            # total_borrowed_usdt = borrowed_usdt + float(usdt_info.get('interest', 0))
+                            # entry_price = total_borrowed_usdt / abs(position_size)
+                        # elif side == 'SHORT' and borrowed > 0:
+                            # entry_price = current_price  # Como não temos melhor estimativa
+                        entry_price = total_collateral_value_in_usdt / total_asset_of_btc
+
+                    # Calcula PNL não realizado
                     if entry_price and current_price:
                         if side == 'LONG':
                             pnl = (current_price - entry_price) * abs(position_size)
@@ -125,34 +160,43 @@ def fetch_open_positions(position_trackers):
                             pnl = (entry_price - current_price) * abs(position_size)
                     else:
                         pnl = 0.0
+                    # remover 4% do pnl para taxas
+                    tax = pnl * 0.04
+                    # tax = 0.08 # test
 
-                    # Calculate initial margin
+                    # ajustar o preço de acordo com a alavancagem
+                    # pnl /= leverage
+                    pnl -= tax
+
+                    # print(f"entry price: {entry_price} - current price: {current_price} - pnl: {pnl} - leverage: {leverage}")
+
+                    # Calcula a margem inicial
                     if leverage > 1 and position_size != 0 and entry_price:
                         initial_margin = (abs(position_size) * entry_price) / leverage
                     else:
                         initial_margin = abs(position_size) * entry_price if entry_price else 0.0
 
-                    # Adjust initial margin for interest and fees
-                    total_interest = interest_base * current_price + interest_quote
+                    # Ajusta a margem inicial para juros e taxas
+                    total_interest = interest * current_price
                     initial_margin += total_interest
 
-                    # Calculate PNL percentage
+                    # Calcula PNL em porcentagem
                     if initial_margin != 0:
                         pnl_percentage = (pnl / initial_margin) * 100
                     else:
                         pnl_percentage = 0.0
 
-                    # Amount in USD
-                    amount_usd = amount_usd if amount_usd else abs(position_size) * current_price if current_price else 0.0
+                    # Quantidade em USD
+                    amount_usd = initial_margin * leverage
 
-                    # Margin used
+                    # Margem usada
                     margin = initial_margin
 
-                    # Get borrowed amount for repayment
+                    # Montante emprestado para reembolso
                     if side == 'LONG':
-                        borrowed_amount = borrowed_quote + interest_quote
+                        borrowed_amount = borrowed_usdt + float(usdt_info.get('interest', 0))
                     else:
-                        borrowed_amount = (borrowed_base + interest_base) * current_price
+                        borrowed_amount = borrowed + interest
 
                     positions.append({
                         'symbol': symbol,
@@ -167,26 +211,29 @@ def fetch_open_positions(position_trackers):
                         'borrowed_amount': abs(borrowed_amount),
                         'leverage': leverage
                     })
+                    # print totalAssetOfBtc of position:
+                    # print(f"Total Asset of {symbol}: {total_asset_of_btc}")
             return positions
         else:
-            print(f"Error fetching open positions: {response.status_code}, {response.text}")
+            print(f"Erro ao obter posições abertas: {response.status_code}, {response.text}")
             return []
     except Exception as e:
-        print(f"Error in fetch_open_positions: {e}")
+        print(f"Erro em fetch_open_positions: {e}")
         return []
 
+
 def close_position_market(position):
-    """Closes a margin position."""
+    """Fecha uma posição de margem."""
     try:
-        print('Closing position:', position)
+        print('Fechando posição:', position)
         symbol = position['symbol']
         side = 'SELL' if position['side'] == 'LONG' else 'BUY'
         amount = abs(position['position_size'])
 
-        # Get symbol info to adjust quantity according to LOT_SIZE
+        # Obtém informações do símbolo para ajustar a quantidade de acordo com LOT_SIZE
         symbol_info = get_symbol_info(symbol)
         if symbol_info is None:
-            print("Could not retrieve symbol info.")
+            print("Não foi possível obter informações do símbolo.")
             return
 
         lot_size_filter = next(f for f in symbol_info['filters'] if f['filterType'] == 'LOT_SIZE')
@@ -194,260 +241,322 @@ def close_position_market(position):
         step_size = float(lot_size_filter['stepSize'])
 
         if amount < min_qty:
-            print(f"Position size {amount} is less than minQty {min_qty}, cannot close position via market order.")
+            print(f"Tamanho da posição {amount} é menor que minQty {min_qty}, não é possível fechar posição via ordem de mercado.")
         else:
-            # Adjust quantity to comply with LOT_SIZE filter
+            # Ajusta a quantidade para cumprir com o filtro LOT_SIZE
             quantity_str = adjust_quantity(symbol_info, amount)
             if quantity_str is None:
-                print("Could not adjust quantity.")
+                print("Não foi possível ajustar a quantidade.")
                 return
 
-            print(f"Closing position with amount: {quantity_str}")
-            # Place market order to close position
+            print(f"Fechando posição com quantidade: {quantity_str}")
+            # Envia ordem de mercado para fechar posição
             url_path = '/sapi/v1/margin/order'
             params = {
                 'symbol': symbol,
                 'side': side,
                 'type': 'MARKET',
-                'quantity': quantity_str,
-                'isIsolated': 'TRUE'
+                'quantity': quantity_str
             }
             response = send_signed_request('POST', url_path, params)
             if response.status_code == 200:
                 data = response.json()
-                print(f"Market order sent to close position: {data}")
+                print(f"Ordem de mercado enviada para fechar posição: {data}")
             else:
-                print(f"Error sending market order: {response.status_code}, {response.text}")
+                print(f"Erro ao enviar ordem de mercado: {response.status_code}, {response.text}")
                 return
 
         base_asset = symbol.replace('USDT', '')
         quote_asset = 'USDT'
 
-        # Auxiliary functions
+        # Funções auxiliares
         def repay_asset(asset, amount):
             repay_amount_str = '{:.8f}'.format(amount).rstrip('0').rstrip('.')
             repay_url = '/sapi/v1/margin/repay'
             repay_params = {
                 'asset': asset,
-                'amount': repay_amount_str,
-                'symbol': symbol,
-                'isIsolated': 'TRUE'
+                'amount': repay_amount_str
             }
             repay_response = send_signed_request('POST', repay_url, repay_params)
             if repay_response.status_code == 200:
                 repay_data = repay_response.json()
-                print(f"Repaid borrowed asset {asset}: {repay_data}")
+                print(f"Reembolsado ativo emprestado {asset}: {repay_data}")
             else:
-                print(f"Error repaying asset {asset}: {repay_response.status_code}, {repay_response.text}")
+                print(f"Erro ao reembolsar ativo {asset}: {repay_response.status_code}, {repay_response.text}")
 
         def sell_asset(quantity):
             quantity_str = adjust_quantity(symbol_info, quantity)
             if quantity_str is None:
-                print(f"Could not adjust quantity for selling {base_asset}.")
+                print(f"Não foi possível ajustar a quantidade para vender {base_asset}.")
                 return
-            print(f"Selling {base_asset}: {quantity_str}")
+            print(f"Vendendo {base_asset}: {quantity_str}")
             sell_params = {
                 'symbol': symbol,
                 'side': 'SELL',
                 'type': 'MARKET',
-                'quantity': quantity_str,
-                'isIsolated': 'TRUE'
+                'quantity': quantity_str
             }
             sell_response = send_signed_request('POST', '/sapi/v1/margin/order', sell_params)
             if sell_response.status_code == 200:
                 sell_data = sell_response.json()
-                print(f"Sold {base_asset}: {sell_data}")
+                print(f"Vendido {base_asset}: {sell_data}")
             else:
-                print(f"Error selling {base_asset}: {sell_response.status_code}, {sell_response.text}")
+                print(f"Erro ao vender {base_asset}: {sell_response.status_code}, {sell_response.text}")
 
         def buy_asset(quantity):
             quantity_str = adjust_quantity(symbol_info, quantity)
             if quantity_str is None:
-                print(f"Could not adjust quantity for buying {base_asset}.")
+                print(f"Não foi possível ajustar a quantidade para comprar {base_asset}.")
                 return
-            print(f"Buying {base_asset}: {quantity_str}")
+            print(f"Comprando {base_asset}: {quantity_str}")
             buy_params = {
                 'symbol': symbol,
                 'side': 'BUY',
                 'type': 'MARKET',
-                'quantity': quantity_str,
-                'isIsolated': 'TRUE'
+                'quantity': quantity_str
             }
             buy_response = send_signed_request('POST', '/sapi/v1/margin/order', buy_params)
             if buy_response.status_code == 200:
                 buy_data = buy_response.json()
-                print(f"Bought {base_asset}: {buy_data}")
+                print(f"Comprado {base_asset}: {buy_data}")
             else:
-                print(f"Error buying {base_asset}: {buy_response.status_code}, {buy_response.text}")
+                print(f"Erro ao comprar {base_asset}: {buy_response.status_code}, {buy_response.text}")
 
-        # Get updated account info
-        account_info = get_margin_account(symbol)
-        base_balance = float(account_info['baseAsset']['free'])
-        quote_balance = float(account_info['quoteAsset']['free'])
-        borrowed_base = float(account_info['baseAsset']['borrowed'])
-        borrowed_quote = float(account_info['quoteAsset']['borrowed'])
-        interest_base = float(account_info['baseAsset']['interest'])
-        interest_quote = float(account_info['quoteAsset']['interest'])
+        # Obtém informações atualizadas da conta
+        account_info = get_margin_account()
+        asset_info = next((item for item in account_info['userAssets'] if item['asset'] == base_asset), None)
+        if asset_info is None:
+            print(f"Nenhum dado de conta encontrado para o ativo {base_asset}")
+            return
+
+        base_balance = float(asset_info['free'])
+        borrowed_base = float(asset_info['borrowed'])
+        interest_base = float(asset_info['interest'])
         total_borrowed_base = borrowed_base + interest_base
-        total_borrowed_quote = borrowed_quote + interest_quote
 
-        # Specific processing for LONG and SHORT positions
+        # Processamento específico para posições LONG e SHORT
         if position['side'] == 'LONG':
-            # Repay borrowed USDT
-            if total_borrowed_quote > 0:
-                repay_asset(quote_asset, total_borrowed_quote)
-            # Sell any remaining BASE asset for USDT
-            account_info = get_margin_account(symbol)
-            base_balance = float(account_info['baseAsset']['free'])
-            if base_balance >= min_qty:
-                sell_asset(base_balance)
+            # Reembolsar USDT emprestado
+            usdt_info = next((item for item in account_info['userAssets'] if item['asset'] == 'USDT'), None)
+            if usdt_info:
+                borrowed_quote = float(usdt_info['borrowed'])
+                interest_quote = float(usdt_info['interest'])
+                total_borrowed_quote = borrowed_quote + interest_quote
+                if total_borrowed_quote > 0:
+                    repay_asset('USDT', total_borrowed_quote)
+            # Vender qualquer ativo BASE restante por USDT
+            account_info = get_margin_account()
+            asset_info = next((item for item in account_info['userAssets'] if item['asset'] == base_asset), None)
+            if asset_info:
+                base_balance = float(asset_info['free'])
+                if base_balance >= min_qty:
+                    sell_asset(base_balance)
         elif position['side'] == 'SHORT':
-            # Buy BASE asset required to repay the loan
+            # Comprar ativo BASE necessário para reembolsar o empréstimo
             required_base = total_borrowed_base - base_balance
             if required_base > min_qty:
                 buy_asset(required_base)
-            # Repay borrowed BASE asset
+            # Reembolsar ativo BASE emprestado
             if total_borrowed_base > 0:
                 repay_asset(base_asset, total_borrowed_base)
-            # Sell any remaining BASE asset for USDT
-            account_info = get_margin_account(symbol)
-            base_balance = float(account_info['baseAsset']['free'])
-            if base_balance >= min_qty:
-                sell_asset(base_balance)
+            # Vender qualquer ativo BASE restante por USDT
+            account_info = get_margin_account()
+            asset_info = next((item for item in account_info['userAssets'] if item['asset'] == base_asset), None)
+            if asset_info:
+                base_balance = float(asset_info['free'])
+                if base_balance >= min_qty:
+                    sell_asset(base_balance)
 
-        print("Position closed and assets repaid successfully.")
+        print("Posição fechada e ativos reembolsados com sucesso.")
+
+        # Transferir fundos da margem para spot e de volta para margem
+        # Isso é para garantir que a Binance reconheça a posição como fechada
+        # Obter saldo livre de USDT na conta de margem
+        account_info = get_margin_account()
+        usdt_info = next((item for item in account_info['userAssets'] if item['asset'] == 'USDT'), None)
+        if usdt_info:
+            free_usdt = float(usdt_info['free'])
+            if free_usdt > 0:
+                transfer_amount_str = '{:.8f}'.format(free_usdt).rstrip('0').rstrip('.')
+                transfer_result = transfer_margin_to_spot('USDT', transfer_amount_str)
+                if transfer_result:
+                    print(f"Transferido {transfer_amount_str} USDT da margem para spot.")
+                    # Agora transfere de volta de spot para margem
+                    transfer_result = transfer_spot_to_margin('USDT', transfer_amount_str)
+                    if transfer_result:
+                        print(f"Transferido {transfer_amount_str} USDT de spot de volta para margem.")
+                    else:
+                        print("Erro ao transferir USDT de spot de volta para margem.")
+                else:
+                    print("Erro ao transferir USDT de margem para spot.")
+            else:
+                print("Nenhum USDT livre na conta de margem para transferir.")
+        else:
+            print("Nenhum ativo USDT encontrado na conta de margem.")
 
     except Exception as e:
-        print(f"Error in close_position_market: {e}")
+        print(f"Erro em close_position_market: {e}")
 
-def get_margin_account(symbol):
-    """Gets the isolated margin account details for a specific symbol."""
+def transfer_margin_to_spot(asset, amount):
+    """Transfere ativo da conta de margem para a conta spot."""
     try:
-        url_path = '/sapi/v1/margin/isolated/account'
-        params = {'symbols': symbol}
-        response = send_signed_request('GET', url_path, params)
+        url_path = '/sapi/v1/margin/transfer'
+        params = {
+            'asset': asset,
+            'amount': amount,
+            'type': '2'  # Transferência de margem para spot
+        }
+        response = send_signed_request('POST', url_path, params)
         if response.status_code == 200:
             data = response.json()
-            if 'assets' in data and len(data['assets']) > 0:
-                return data['assets'][0]
-            else:
-                print(f"No account data found for symbol {symbol}")
-                return None
+            return data
         else:
-            print(f"Error fetching margin account info: {response.status_code}, {response.text}")
+            print(f"Erro ao transferir de margem para spot: {response.status_code}, {response.text}")
             return None
     except Exception as e:
-        print(f"Error in get_margin_account: {e}")
+        print(f"Erro em transfer_margin_to_spot: {e}")
+        return None
+
+def transfer_spot_to_margin(asset, amount):
+    """Transfere ativo da conta spot para a conta de margem."""
+    try:
+        url_path = '/sapi/v1/margin/transfer'
+        params = {
+            'asset': asset,
+            'amount': amount,
+            'type': '1'  # Transferência de spot para margem
+        }
+        response = send_signed_request('POST', url_path, params)
+        if response.status_code == 200:
+            data = response.json()
+            return data
+        else:
+            print(f"Erro ao transferir de spot para margem: {response.status_code}, {response.text}")
+            return None
+    except Exception as e:
+        print(f"Erro em transfer_spot_to_margin: {e}")
+        return None
+
+def get_margin_account():
+    """Obtém os detalhes da conta de margem cruzada."""
+    try:
+        url_path = '/sapi/v1/margin/account'
+        response = send_signed_request('GET', url_path)
+        if response.status_code == 200:
+            data = response.json()
+            return data
+        else:
+            print(f"Erro ao obter informações da conta de margem: {response.status_code}, {response.text}")
+            return None
+    except Exception as e:
+        print(f"Erro em get_margin_account: {e}")
         return None
 
 def open_new_position_market(symbol, side, usd_amount, leverage):
-    """Opens a new margin position with a market order and returns position details."""
+    """Abre uma nova posição de margem com uma ordem de mercado e retorna os detalhes da posição."""
     try:
-        print(f"Opening new position: {side.upper()} ${usd_amount} of {symbol} with leverage x{leverage}")
-        # Get current price
+        print(f"Abrindo nova posição: {side.upper()} ${usd_amount} de {symbol} com leverage x{leverage}")
+        # Obtém o preço atual
         price = get_current_price(symbol)
         if price is None or price == 0:
-            print("Could not retrieve current price.")
+            print("Não foi possível obter o preço atual.")
             return None
 
-        # Get symbol info to adjust quantity according to LOT_SIZE
+        # Obtém informações do símbolo para ajustar a quantidade de acordo com LOT_SIZE
         symbol_info = get_symbol_info(symbol)
         if symbol_info is None:
-            print("Could not retrieve symbol info.")
+            print("Não foi possível obter informações do símbolo.")
             return None
 
         base_asset_precision = symbol_info['baseAssetPrecision']
-        # Calculate quantity in base asset
+        # Calcula a quantidade em ativo base
         quantity = (usd_amount * leverage) / price
 
-        # Adjust quantity to comply with LOT_SIZE filter
+        # Ajusta a quantidade para cumprir com o filtro LOT_SIZE
         quantity_str = adjust_quantity(symbol_info, quantity)
         if quantity_str is None:
-            print("Could not adjust quantity.")
+            print("Não foi possível ajustar a quantidade.")
             return None
 
-        # Borrow asset if necessary
+        # Empréstimo de ativo se necessário
         url_path_borrow = '/sapi/v1/margin/loan'
         if side.upper() == 'BUY':
-            # Borrow USDT
+            # Empréstimo de USDT
             borrow_asset = 'USDT'
             borrow_amount = usd_amount * (leverage - 1)
             borrow_amount_str = '{:.8f}'.format(borrow_amount).rstrip('0').rstrip('.')
         else:
-            # Borrow BASE asset
+            # Empréstimo de ativo BASE
             base_asset = symbol.replace('USDT', '')
             borrow_asset = base_asset
             borrow_amount = float(quantity_str) * (leverage - 1)
             borrow_amount_str = ('{0:.' + str(base_asset_precision) + 'f}').format(borrow_amount).rstrip('0').rstrip('.')
 
-        # Check max borrowable amount
-        max_borrowable = get_max_borrowable(symbol, borrow_asset, isIsolated='TRUE')
+        # Verifica o máximo que pode ser emprestado
+        max_borrowable = get_max_borrowable(borrow_asset)
         if max_borrowable is None:
-            print("Could not retrieve max borrowable amount.")
+            print("Não foi possível obter o valor máximo emprestável.")
             return None
 
         if max_borrowable == 0.0:
-            print(f"Cannot borrow {borrow_asset} because max borrowable amount is zero.")
-            print("Please ensure you have sufficient collateral in your isolated margin account.")
+            print(f"Não é possível emprestar {borrow_asset} porque o valor máximo emprestável é zero.")
+            print("Certifique-se de que você tem garantia suficiente em sua conta de margem.")
             return None
 
         if float(borrow_amount_str) > max_borrowable:
-            print(f"Desired borrow amount {borrow_amount_str} exceeds max borrowable {max_borrowable}. Adjusting borrow amount.")
+            print(f"O valor de empréstimo desejado {borrow_amount_str} excede o máximo emprestável {max_borrowable}. Ajustando o valor do empréstimo.")
             borrow_amount_str = ('{0:.' + str(base_asset_precision) + 'f}').format(max_borrowable).rstrip('0').rstrip('.')
 
-            # Adjust quantity accordingly
+            # Ajusta a quantidade de acordo
             if side.upper() == 'SELL':
                 adjusted_quantity = max_borrowable / (leverage - 1)
                 quantity = adjusted_quantity
                 quantity_str = adjust_quantity(symbol_info, quantity)
                 if quantity_str is None:
-                    print("Could not adjust quantity after max borrowable check.")
+                    print("Não foi possível ajustar a quantidade após verificar o máximo emprestável.")
                     return None
 
-        # Proceed to borrow if amount is greater than zero
+        # Prossegue para emprestar se o valor for maior que zero
         if float(borrow_amount_str) > 0:
             params_borrow = {
                 'asset': borrow_asset,
-                'amount': borrow_amount_str,
-                'symbol': symbol,
-                'isIsolated': 'TRUE'
+                'amount': borrow_amount_str
             }
 
             response_borrow = send_signed_request('POST', url_path_borrow, params_borrow)
             if response_borrow.status_code == 200:
                 data_borrow = response_borrow.json()
-                print(f"Borrowed asset: {data_borrow}")
+                print(f"Ativo emprestado: {data_borrow}")
             else:
-                print(f"Error borrowing asset: {response_borrow.status_code}, {response_borrow.text}")
+                print(f"Erro ao emprestar ativo: {response_borrow.status_code}, {response_borrow.text}")
                 return None
         else:
-            print(f"No need to borrow {borrow_asset}, amount is zero.")
+            print(f"Não é necessário emprestar {borrow_asset}, valor é zero.")
 
-        # Place market order
+        # Envia ordem de mercado
         url_path_order = '/sapi/v1/margin/order'
         params_order = {
             'symbol': symbol,
             'side': side.upper(),
             'type': 'MARKET',
-            'quantity': quantity_str,
-            'isIsolated': 'TRUE'
+            'quantity': quantity_str
         }
         response_order = send_signed_request('POST', url_path_order, params_order)
         if response_order.status_code == 200:
             data_order = response_order.json()
-            print(f"Market order sent to open new position: {data_order}")
+            print(f"Ordem de mercado enviada para abrir nova posição: {data_order}")
 
-            # Extract entry price from fills
+            # Extrai o preço de entrada dos fills
             fills = data_order.get('fills', [])
             if fills:
-                # Calculate weighted average entry price
+                # Calcula o preço médio ponderado de entrada
                 total_qty = sum(float(fill['qty']) for fill in fills)
                 entry_price = sum(float(fill['price']) * float(fill['qty']) for fill in fills) / total_qty
             else:
-                # If no fills, use cummulativeQuoteQty
+                # Se não houver fills, usa cummulativeQuoteQty
                 entry_price = float(data_order['cummulativeQuoteQty']) / float(data_order['executedQty'])
 
-            # Return position details
+            # Retorna detalhes da posição
             position_details = {
                 'symbol': symbol,
                 'side': side.upper(),
@@ -456,18 +565,18 @@ def open_new_position_market(symbol, side, usd_amount, leverage):
                 'leverage': leverage,
                 'quantity': float(quantity_str)
             }
-            return position_details  # Return the details to ui.py
+            return position_details  # Retorna os detalhes para ui.py
 
         else:
-            print(f"Error sending market order: {response_order.status_code}, {response_order.text}")
+            print(f"Erro ao enviar ordem de mercado: {response_order.status_code}, {response_order.text}")
             return None
 
     except Exception as e:
-        print(f"Error in open_new_position_market: {e}")
+        print(f"Erro em open_new_position_market: {e}")
         return None
 
 def get_symbol_info(symbol):
-    """Gets the exchange information for the given symbol."""
+    """Obtém as informações de exchange para o símbolo fornecido."""
     try:
         url = BASE_URL + '/api/v3/exchangeInfo'
         params = {'symbol': symbol}
@@ -477,14 +586,14 @@ def get_symbol_info(symbol):
             symbol_info = data['symbols'][0]
             return symbol_info
         else:
-            print(f"Error fetching symbol info: {response.status_code}, {response.text}")
+            print(f"Erro ao obter informações do símbolo: {response.status_code}, {response.text}")
             return None
     except Exception as e:
-        print(f"Error in get_symbol_info: {e}")
+        print(f"Erro em get_symbol_info: {e}")
         return None
 
 def adjust_quantity(symbol_info, quantity):
-    """Adjusts the quantity to comply with the LOT_SIZE filter."""
+    """Ajusta a quantidade para cumprir com o filtro LOT_SIZE."""
     try:
         lot_size_filter = next(f for f in symbol_info['filters'] if f['filterType'] == 'LOT_SIZE')
         min_qty = float(lot_size_filter['minQty'])
@@ -496,7 +605,7 @@ def adjust_quantity(symbol_info, quantity):
         elif quantity > max_qty:
             quantity = max_qty
         else:
-            # Adjust to the nearest step size
+            # Ajusta para o step size mais próximo
             precision = int(round(-math.log(step_size, 10), 0))
             quantity = math.floor(quantity / step_size) * step_size
             quantity = round(quantity, precision)
@@ -504,11 +613,11 @@ def adjust_quantity(symbol_info, quantity):
         quantity_str = ('{0:.' + str(symbol_info['baseAssetPrecision']) + 'f}').format(quantity).rstrip('0').rstrip('.')
         return quantity_str
     except Exception as e:
-        print(f"Error in adjust_quantity: {e}")
+        print(f"Erro em adjust_quantity: {e}")
         return None
 
 def decide_trade_direction(symbol, rsi_period=14, use_sma=True, use_rsi=True, use_volume=False, granularity=5):
-    """Decides the trade direction based on historical data and a combined strategy."""
+    """Decide a direção do trade com base em dados históricos e uma estratégia combinada."""
     try:
         interval = '1m' if granularity == 1 else '5m'
         limit = 100 if granularity == 1 else 30
@@ -522,16 +631,16 @@ def decide_trade_direction(symbol, rsi_period=14, use_sma=True, use_rsi=True, us
         if response.status_code == 200:
             data = response.json()
             if len(data) < 25:
-                print(f"Insufficient data for analysis ({len(data)} periods)")
+                print(f"Dados insuficientes para análise ({len(data)} períodos)")
                 return {'decision': 'wait', 'sma': 'N/A', 'rsi': 'N/A', 'volume': 'N/A'}
             close_prices = np.array([float(kline[4]) for kline in data])
             volumes = np.array([float(kline[5]) for kline in data])
 
-            # Calculate SMAs
+            # Calcula SMAs
             sma_short = np.mean(close_prices[-7:])
             sma_long = np.mean(close_prices[-25:])
 
-            # Calculate RSI
+            # Calcula RSI
             delta = np.diff(close_prices)
             up = delta.copy()
             down = delta.copy()
@@ -546,28 +655,29 @@ def decide_trade_direction(symbol, rsi_period=14, use_sma=True, use_rsi=True, us
                 rs = gain / loss
                 rsi = 100 - (100 / (1 + rs))
 
-            # Volume analysis
+            # Análise de volume
             avg_volume = np.mean(volumes[-7:])
             current_volume = volumes[-1]
 
-            # Individual signals
+            # Sinais individuais
             sma_signal = 'buy' if sma_short > sma_long else 'sell' if sma_short < sma_long else 'wait'
             rsi_signal = 'buy' if rsi < 30 else 'sell' if rsi > 70 else 'wait'
 
-            # Volume as confirmation
+            # Volume como confirmação
             if current_volume > avg_volume:
-                if close_prices[-1] > close_prices[-2]:
-                    volume_signal = 'buy'
-                elif close_prices[-1] < close_prices[-2]:
-                    volume_signal = 'sell'
-                else:
-                    volume_signal = 'wait'
+                volume_signal = 'go'
+                # if close_prices[-1] > close_prices[-2]:
+                    # volume_signal = 'buy'
+                # elif close_prices[-1] < close_prices[-2]:
+                    # volume_signal = 'sell'
+                # else:
+                    # volume_signal = 'wait'
             else:
                 volume_signal = 'wait'
 
-            # Decide the direction based on the active indicators
+            # Decide a direção com base nos indicadores ativos
             if use_sma and use_rsi and use_volume:
-                if sma_signal == rsi_signal == volume_signal and sma_signal != 'wait':
+                if sma_signal == rsi_signal and volume_signal == 'go':
                     decision = sma_signal
                 else:
                     decision = 'wait'
@@ -577,12 +687,12 @@ def decide_trade_direction(symbol, rsi_period=14, use_sma=True, use_rsi=True, us
                 else:
                     decision = 'wait'
             elif use_sma and use_volume:
-                if sma_signal == volume_signal and sma_signal != 'wait':
+                if volume_signal == 'go' and sma_signal != 'wait':
                     decision = sma_signal
                 else:
                     decision = 'wait'
             elif use_rsi and use_volume:
-                if rsi_signal == volume_signal and rsi_signal != 'wait':
+                if volume_signal == 'go' and rsi_signal != 'wait':
                     decision = rsi_signal
                 else:
                     decision = 'wait'
@@ -591,7 +701,7 @@ def decide_trade_direction(symbol, rsi_period=14, use_sma=True, use_rsi=True, us
             elif use_rsi:
                 decision = rsi_signal if rsi_signal != 'wait' else 'wait'
             elif use_volume:
-                decision = volume_signal if volume_signal != 'wait' else 'wait'
+                decision = 'wait'
             else:
                 decision = 'wait'
 
@@ -599,34 +709,34 @@ def decide_trade_direction(symbol, rsi_period=14, use_sma=True, use_rsi=True, us
                 "decision": decision,
                 "sma": f"{int(sma_short)} | {int(sma_long)} ({sma_signal})",
                 "rsi": f"{int(rsi)} ({rsi_signal})",
-                "volume": f"{int(current_volume)} now | {int(avg_volume)} avg ({volume_signal})"
+                "volume": f"{int(current_volume)} agora | {int(avg_volume)} média ({volume_signal})"
             }
 
         else:
-            print(f"Error fetching historical data: {response.status_code}, {response.text}")
+            print(f"Erro ao obter dados históricos: {response.status_code}, {response.text}")
             return {
                 "decision": "wait",
-                "sma": "Error",
-                "rsi": "Error",
-                "volume": "Error"
+                "sma": "Erro",
+                "rsi": "Erro",
+                "volume": "Erro"
             }
     except Exception as e:
-        print(f"Error in decide_trade_direction: {e}")
+        print(f"Erro em decide_trade_direction: {e}")
         return {
             "decision": "wait",
-            "sma": "Error",
-            "rsi": "Error",
-            "volume": "Error"
+            "sma": "Erro",
+            "rsi": "Erro",
+            "volume": "Erro"
         }
 
 def fetch_high_low_prices(symbol):
-    """Gets the 1-hour high and low prices for the given symbol."""
+    """Obtém os preços máximos e mínimos de 1 hora para o símbolo fornecido."""
     try:
         url = BASE_URL + '/api/v3/klines'
         params = {
             'symbol': symbol,
             'interval': '1m',
-            'limit': 60  # last 60 minutes
+            'limit': 60  # Últimos 60 minutos
         }
         response = requests.get(url, params=params)
         if response.status_code == 200:
@@ -637,48 +747,42 @@ def fetch_high_low_prices(symbol):
             low_price = min(lows)
             return high_price, low_price
         else:
-            print(f"Error fetching high/low prices: {response.status_code}, {response.text}")
+            print(f"Erro ao obter preços high/low: {response.status_code}, {response.text}")
             return None, None
     except Exception as e:
-        print(f"Error in fetch_high_low_prices: {e}")
+        print(f"Erro em fetch_high_low_prices: {e}")
         return None, None
 
-def get_max_borrowable(symbol, asset, isIsolated='TRUE'):
+def get_max_borrowable(asset):
+    """Obtém o valor máximo que pode ser emprestado para um ativo."""
     try:
         url_path = '/sapi/v1/margin/maxBorrowable'
         params = {
-            'asset': asset,
-            'isolatedSymbol': symbol,
-            'isIsolated': isIsolated
+            'asset': asset
         }
         response = send_signed_request('GET', url_path, params)
         if response.status_code == 200:
             data = response.json()
             return float(data['amount'])
         else:
-            print(f"Error fetching max borrowable: {response.status_code}, {response.text}")
+            print(f"Erro ao obter máximo emprestável: {response.status_code}, {response.text}")
             return None
     except Exception as e:
-        print(f"Error in get_max_borrowable: {e}")
+        print(f"Erro em get_max_borrowable: {e}")
         return None
 
-def get_margin_account_balance(symbol):
-    """Gets the isolated margin account balances for a specific symbol."""
+def get_margin_account_balance():
+    """Obtém os saldos da conta de margem cruzada."""
     try:
-        url_path = '/sapi/v1/margin/isolated/account'
-        params = {'symbols': symbol}
-        response = send_signed_request('GET', url_path, params)
+        url_path = '/sapi/v1/margin/account'
+        response = send_signed_request('GET', url_path)
         if response.status_code == 200:
             data = response.json()
-            if 'assets' in data and len(data['assets']) > 0:
-                return data['assets'][0]
-            else:
-                print(f"No account data found for symbol {symbol}")
-                return None
+            return data
         else:
-            print(f"Error fetching margin account info: {response.status_code}, {response.text}")
+            print(f"Erro ao obter informações da conta de margem: {response.status_code}, {response.text}")
             return None
     except Exception as e:
-        print(f"Error in get_margin_account_balance: {e}")
+        print(f"Erro em get_margin_account_balance: {e}")
         return None
 

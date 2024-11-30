@@ -1,0 +1,33 @@
+{
+    "tradeEnabled": "True",
+    "transferEnabled": "True",
+    "transferInEnabled": "True",
+    "transferOutEnabled": "True",
+    "borrowEnabled": "True",
+    "marginLevel": "11.17124487",
+    "totalAssetOfBtc": "0.00028659",
+    "totalLiabilityOfBtc": "0.00018388",
+    "totalNetAssetOfBtc": "0.00010271",
+    "userAssets": [
+        {
+            "asset": "BTC",
+            "free": "0.0001998",
+            "locked": "0",
+            "borrowed": "0",
+            "interest": "0",
+            "netAsset": "0.0001998"
+        },
+        {
+            "asset": "USDT",
+            "free": "8.496798",
+            "locked": "0",
+            "borrowed": "18",
+            "interest": "0.0015151",
+            "netAsset": "-9.5047171"
+        },
+    ],
+    "collateralMarginLevel": "1.55856224",
+    "totalCollateralValueInUSDT": "28.05648176",
+    "accountType": "MARGIN_2",
+    "created": "True"
+}
