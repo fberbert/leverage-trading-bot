@@ -51,6 +51,13 @@ class MainWindow(QWidget):
         self.margin_calls = 0
         self.fetch_open_positions_empty_count = 0
 
+        # NOVO CAMPO: IGNORAR MOEDAS
+        # Aqui vamos armazenar a string com as moedas a ignorar no formato "TRUMP,TESTE,ETC"
+        self.ignore_coins_sl = ''  # Texto inicial
+        self.ignore_coins_sl_list = []  # Lista (parsed) para fazer a checagem
+        self.ignore_coins_tp = ''  # Texto inicial
+        self.ignore_coins_tp_list = []  # Lista (parsed) para fazer a checagem
+
         self.position_trackers = {}
         self.load_position_trackers()
 
@@ -72,10 +79,11 @@ class MainWindow(QWidget):
         # Trade direction option ('both', 'buy', 'sell')
         self.trade_direction_option = 'both'
 
+        # Carregar configs
         self.load_configurations()
         self.init_ui()
 
-        # Update radio buttons based on loaded configuration
+        # Ajusta radio buttons conforme config
         if self.trade_direction_option == 'both':
             self.trade_direction_both.setChecked(True)
         elif self.trade_direction_option == 'buy':
@@ -83,9 +91,10 @@ class MainWindow(QWidget):
         elif self.trade_direction_option == 'sell':
             self.trade_direction_sell.setChecked(True)
 
-        # Update UI elements based on loaded configuration
+        # Ajusta interface dos trailing stops
         self.toggle_input_opacity(self.auto_calc_trailing_stop)
 
+        # Sons
         self.sound_player = SoundPlayer("correct-chime.mp3")
         self.sound_closed_position_win = SoundPlayer("closed-position-win.mp3")
         self.sound_closed_position_lose = SoundPlayer("closed-position-lose.mp3")
@@ -93,6 +102,7 @@ class MainWindow(QWidget):
         self.sound_price_below = SoundPlayer("price-below.mp3")
         self.sound_open_position = SoundPlayer("coin.mp3")
 
+        # Websocket de preços
         self.price_ws_client = PriceWebsocketClient(self.selected_symbol)
         self.price_ws_client.price_updated.connect(self.update_price_label)
         self.price_ws_client.start()
@@ -160,7 +170,7 @@ class MainWindow(QWidget):
         config_left_layout = QFormLayout()
         config_right_layout = QFormLayout()
 
-        # Left Configurations
+        # ------ LEFT CONFIGURATIONS ------
         leverage_label = QLabel("Leverage:")
         leverage_label.setFont(QFont("Arial", 12))
         self.leverage_input = QLineEdit(str(self.default_leverage))
@@ -188,7 +198,9 @@ class MainWindow(QWidget):
         auto_calc_trailing_stop_label.setFont(QFont("Arial", 12))
         self.auto_calc_trailing_stop_checkbox = QCheckBox()
         self.auto_calc_trailing_stop_checkbox.setChecked(self.auto_calc_trailing_stop)
-        self.auto_calc_trailing_stop_checkbox.stateChanged.connect(lambda state: self.toggle_auto_calc_trailing_stop(state, self.auto_calc_trailing_stop_checkbox))
+        self.auto_calc_trailing_stop_checkbox.stateChanged.connect(
+            lambda state: self.toggle_auto_calc_trailing_stop(state, self.auto_calc_trailing_stop_checkbox)
+        )
         config_left_layout.addRow(auto_calc_trailing_stop_label, self.auto_calc_trailing_stop_checkbox)
 
         trailing_stop_1_15_label = QLabel("Trailing Stop 5-15%:")
@@ -219,7 +231,7 @@ class MainWindow(QWidget):
         self.trailing_stop_above_50_input.setFixedWidth(100)
         config_left_layout.addRow(trailing_stop_above_50_label, self.trailing_stop_above_50_input)
 
-        # Right Configurations
+        # ------ RIGHT CONFIGURATIONS ------
         alert_price_above_label = QLabel("Preço de Alerta Acima:")
         alert_price_above_label.setFont(QFont("Arial", 12))
         self.alert_entry_above = QLineEdit(str(self.alert_price_above))
@@ -263,18 +275,23 @@ class MainWindow(QWidget):
         self.granularity_1m_checkbox.setFont(QFont("Arial", 12))
         self.granularity_1m_checkbox.setChecked(self.granularity == '1')
         self.granularity_1m_checkbox.setStyleSheet("QCheckBox { color: white; margin-right: 20px;}")
-        self.granularity_1m_checkbox.stateChanged.connect(lambda state: self.select_granularity(state, self.granularity_1m_checkbox))
+        self.granularity_1m_checkbox.stateChanged.connect(
+            lambda state: self.select_granularity(state, self.granularity_1m_checkbox)
+        )
         granularity_layout.addWidget(self.granularity_1m_checkbox)
 
         self.granularity_5m_checkbox = QCheckBox("5m")
         self.granularity_5m_checkbox.setFont(QFont("Arial", 12))
         self.granularity_5m_checkbox.setChecked(self.granularity == '5')
         self.granularity_5m_checkbox.setStyleSheet("QCheckBox { color: white; margin-right: 20px;}")
-        self.granularity_5m_checkbox.stateChanged.connect(lambda state: self.select_granularity(state, self.granularity_5m_checkbox))
+        self.granularity_5m_checkbox.stateChanged.connect(
+            lambda state: self.select_granularity(state, self.granularity_5m_checkbox)
+        )
         granularity_layout.addWidget(self.granularity_5m_checkbox)
 
         granularity_layout.addStretch()
 
+        # Campo de Chamadas de Margem
         margin_calls_label = QLabel("Chamadas de Margem:")
         margin_calls_label.setFont(QFont("Arial", 12))
         self.margin_calls_input = QLineEdit(str(self.margin_calls))
@@ -292,6 +309,27 @@ class MainWindow(QWidget):
 
         config_right_layout.addRow(margin_calls_label, margin_calls_layout)
         config_right_layout.addRow(granularity_layout)
+
+        # ---- NOVO CAMPO: IGNORAR MOEDAS ----
+        # Será um QLineEdit para a string de moedas ignoradas
+        ignore_coins_sl_label = QLabel("Ignorar Stop Loss:")
+        ignore_coins_sl_label.setFont(QFont("Arial", 12))
+        self.ignore_coins_sl_input = QLineEdit(str(self.ignore_coins_sl))
+        self.ignore_coins_sl_input.setFont(QFont("Arial", 12))
+        self.ignore_coins_sl_input.setFixedWidth(200)
+        # Vamos conectar a mesma check_parameters_changes para salvar dinamicamente
+        # self.ignore_coins_sl_input.textChanged.connect(self.check_parameters_changes)
+        config_right_layout.addRow(ignore_coins_sl_label, self.ignore_coins_sl_input)
+
+        ignore_coins_tp_label = QLabel("Ignorar Take Profit:")
+        ignore_coins_tp_label.setFont(QFont("Arial", 12))
+        self.ignore_coins_tp_input = QLineEdit(str(self.ignore_coins_tp))
+        self.ignore_coins_tp_input.setFont(QFont("Arial", 12))
+        self.ignore_coins_tp_input.setFixedWidth(200)
+        # Vamos conectar a mesma check_parameters_changes para salvar dinamicamente
+        # self.ignore_coins_tp_input.textChanged.connect(self.check_parameters_changes)
+        config_right_layout.addRow(ignore_coins_tp_label, self.ignore_coins_tp_input)
+        # ---- FIM NOVO CAMPO ----
 
         config_hbox.addLayout(config_left_layout)
         config_hbox.addLayout(config_right_layout)
@@ -428,8 +466,10 @@ class MainWindow(QWidget):
         # Positions Table
         self.positions_table = QTableWidget()
         self.positions_table.setRowCount(0)
-        columns = ["Contrato", "Qtd", "Entry / Market", "Preço de Liq.", "Margem",
-                   "PNL Não Realizado", "Taxas", "Trigger", "Ações"]
+        columns = [
+            "Contrato", "Qtd", "Entry / Market", "Preço de Liq.",
+            "Margem", "PNL Não Realizado", "Taxas", "Trigger", "Ações"
+        ]
         self.positions_table.setColumnCount(len(columns))
         self.positions_table.setHorizontalHeaderLabels(columns)
         header = self.positions_table.horizontalHeader()
@@ -437,7 +477,7 @@ class MainWindow(QWidget):
 
         self.positions_table.setColumnWidth(0, 230)
         self.positions_table.setColumnWidth(1, 100)
-        self.positions_table.setColumnWidth(2, 150)
+        self.positions_table.setColumnWidth(2, 200)
         self.positions_table.setColumnWidth(3, 80)
         self.positions_table.setColumnWidth(4, 100)
         self.positions_table.setColumnWidth(5, 170)
@@ -544,6 +584,9 @@ class MainWindow(QWidget):
         self.alert_below_triggered = False
 
     def check_parameters_changes(self):
+        """
+        Valida e salva as configurações sempre que algum QLineEdit/QCheckBox muda.
+        """
         try:
             new_leverage = int(self.leverage_input.text())
             new_default_stop_loss = float(self.default_stop_loss_input.text())
@@ -559,6 +602,14 @@ class MainWindow(QWidget):
             new_rsi_period = int(self.rsi_period_input.text())
             new_margin_calls = int(self.margin_calls_input.text())
 
+            # Novo: ignorar moedas
+            new_ignore_coins_sl = self.ignore_coins_sl_input.text().strip()
+            # parse e salva em self.ignore_coins_list
+            ignore_list_sl = [c.strip() for c in new_ignore_coins_sl.split(',') if c.strip()]
+
+            new_ignore_coins_tp = self.ignore_coins_tp_input.text().strip()
+            ignore_list_tp = [c.strip() for c in new_ignore_coins_tp.split(',') if c.strip()]
+
             self.default_leverage = new_leverage
             self.default_stop_loss = new_default_stop_loss
             self.stop_loss_price = new_stop_loss_price
@@ -572,8 +623,17 @@ class MainWindow(QWidget):
             self.default_contract_qty = new_default_contract_qty
             self.rsi_period = new_rsi_period
             self.margin_calls = new_margin_calls
+
+            # Guarda e parseia ignore_coins
+            self.ignore_coins_sl = new_ignore_coins_sl
+            self.ignore_coins_sl_list = ignore_list_sl
+
+            self.ignore_coins_tp = new_ignore_coins_tp
+            self.ignore_coins_tp_list = ignore_list_tp
+
             self.reset_alerts()
 
+            # Feedback de sucesso no botão
             self.save_config_button.setStyleSheet("background-color: #00ff00; color: black; min-height: 30px;")
             self.save_config_button.setText("Salvo com sucesso!")
             QTimer.singleShot(500, lambda: self.save_config_button.setStyleSheet("min-height: 30px;"))
@@ -600,6 +660,7 @@ class MainWindow(QWidget):
                 else:
                     self.fetch_open_positions_empty_count += 1
 
+                # Se não há posições, e auto_open_new_position estiver ativo, tentamos abrir
                 if not data and self.auto_open_new_position and not self.monitoring_signal and self.fetch_open_positions_empty_count > 3:
                     print(f"Empty count: {self.fetch_open_positions_empty_count}, abrindo nova posição...")
                     self.open_new_position_after_close(None)
@@ -621,6 +682,7 @@ class MainWindow(QWidget):
     def update_positions_display(self, positions):
         self.positions_table.setRowCount(0)
         current_positions_ids = set()
+
         for position in positions:
             row_position = self.positions_table.rowCount()
             self.positions_table.insertRow(row_position)
@@ -751,7 +813,6 @@ class MainWindow(QWidget):
             actions_widget.setLayout(actions_layout)
             self.positions_table.setCellWidget(row_position, 8, actions_widget)
 
-            position_id = position['symbol']
             current_positions_ids.add(position_id)
             if position_id not in self.position_trackers:
                 self.position_trackers[position_id] = {
@@ -768,6 +829,7 @@ class MainWindow(QWidget):
                 used_calls = tracker.get('used_margin_calls', 0)
                 self.update_used_margin_calls_label(used_calls)
 
+        # Remove trackers que não estão mais em posições abertas
         for pid in list(self.position_trackers.keys()):
             if pid not in current_positions_ids:
                 del self.position_trackers[pid]
@@ -776,7 +838,8 @@ class MainWindow(QWidget):
     def check_auto_close_positions(self):
         positions_to_delete = []
 
-        for symbol, tracker in self.position_trackers.items():
+        position_trackers_copy = list(self.position_trackers.items())
+        for symbol, tracker in position_trackers_copy:
             position = tracker['position']
             position_id = position['symbol']
             pos_margin = position.get('posMargin', 1)
@@ -789,22 +852,30 @@ class MainWindow(QWidget):
                 continue
 
             pnl_percent = (unrealised_pnl / pos_margin) * 100
-
             fee_percent = 0.06 * 2 * real_leverage
             pnl_percent -= fee_percent
 
             current_trigger = tracker.get('trigger_stop_loss_percent', self.default_stop_loss)
-
             calculated_stop_loss = self.default_stop_loss
 
+            # Lógica do trailing stop
+            # converter pnl_percent para float
+            pnl_percent = float(pnl_percent)
+
+            # print(f"pnl_percent: {pnl_percent:.2f} | auto_calc_trailing_stop: {self.auto_calc_trailing_stop} | {self.trailing_stop_1_15}")
             if not self.auto_calc_trailing_stop:
-                if 0.5 <= pnl_percent <= 5:
-                    # calculated_stop_loss = pnl_percent * 0.5
+                # print("Calculando stop loss manualmente...")
+                if 0.5 <= pnl_percent <= 3 and real_leverage >= 20:
                     calculated_stop_loss = calculated_stop_loss
-                if 5.1 <= pnl_percent <= 15.9:
-                    # update only if calculated stop loss is greater than 3
-                    if (pnl_percent - self.trailing_stop_1_15) > 3:
-                        calculated_stop_loss = pnl_percent - self.trailing_stop_1_15
+                elif 4 <= pnl_percent < 5:
+                    # calculated_stop_loss = pnl_percent * 0.5
+                    # calculated_stop_loss = calculated_stop_loss
+                    calculated_stop_loss = 2
+                elif 5 <= pnl_percent <= 15.9:
+                    if (pnl_percent - self.trailing_stop_1_15) > 2 and pnl_percent > 0:
+                        tmp_calculated_stop_loss = pnl_percent - self.trailing_stop_1_15
+                        if tmp_calculated_stop_loss > calculated_stop_loss:
+                            calculated_stop_loss = tmp_calculated_stop_loss
                 elif 16 <= pnl_percent <= 30:
                     calculated_stop_loss = pnl_percent - self.trailing_stop_16_30
                 elif 31 <= pnl_percent <= 50:
@@ -830,12 +901,12 @@ class MainWindow(QWidget):
                     stop_loss_price = float(self.stop_loss_price)
                     current_price = self.last_price
 
-                    if current_qty > 0:  # Long position
+                    if current_qty > 0:  # Long
                         if stop_loss_price >= avg_entry_price:
                             # Take Profit
                             if current_price >= stop_loss_price:
                                 print(f"Stop Loss Price atingido (Take Profit) para posição LONG em {stop_loss_price}")
-                                if (self.auto_close_positions):
+                                if self.auto_close_positions:
                                     self.close_position_market(position)
                                     positions_to_delete.append(symbol)
                                 continue
@@ -843,16 +914,16 @@ class MainWindow(QWidget):
                             # Stop Loss
                             if current_price <= stop_loss_price:
                                 print(f"Stop Loss Price atingido (Stop Loss) para posição LONG em {stop_loss_price}")
-                                if (self.auto_close_positions):
+                                if self.auto_close_positions:
                                     self.close_position_market(position)
                                     positions_to_delete.append(symbol)
                                 continue
-                    elif current_qty < 0:  # Short position
+                    else:  # Short
                         if stop_loss_price <= avg_entry_price:
                             # Take Profit
                             if current_price <= stop_loss_price:
                                 print(f"Stop Loss Price atingido (Take Profit) para posição SHORT em {stop_loss_price}")
-                                if (self.auto_close_positions):
+                                if self.auto_close_positions:
                                     self.close_position_market(position)
                                     positions_to_delete.append(symbol)
                                 continue
@@ -860,43 +931,61 @@ class MainWindow(QWidget):
                             # Stop Loss
                             if current_price >= stop_loss_price:
                                 print(f"Stop Loss Price atingido (Stop Loss) para posição SHORT em {stop_loss_price}")
-                                if (self.auto_close_positions):
+                                if self.auto_close_positions:
                                     self.close_position_market(position)
                                     positions_to_delete.append(symbol)
                                 continue
                 except ValueError:
                     print("Valor inválido para Stop Loss Price. Ignorando.")
 
+            # verificar se a moeda é ignorada
+            sl_ignored = False
+            for coin in self.ignore_coins_sl_list:
+                if coin and symbol.startswith(coin):
+                    sl_ignored = True
+
+            tp_ignored = False
+            for coin in self.ignore_coins_tp_list:
+                if coin and symbol.startswith(coin):
+                    tp_ignored = True
+
             # Verificar Stop Loss Percentual
+            delete_position = False
             if pnl_percent <= tracker['trigger_stop_loss_percent'] and self.auto_close_positions:
                 if pnl_percent >= 0:
-                    self.close_position_market(position)
-                    message = (
-                        f"{position['symbol']} - "
-                        f"LUCRO de {pnl_percent:.2f}%"
-                    )
-                    self.show_alert_message(message)
-                    self.sound_closed_position_win.play_sound()
+                    if not tp_ignored:
+                        self.close_position_market(position)
+                        message = f"{position['symbol']} - LUCRO de {pnl_percent:.2f}%"
+                        self.show_alert_message(message)
+                        self.sound_closed_position_win.play_sound()
+                        delete_position = True
+
+                        if self.auto_open_new_position:
+                            self.open_new_position_after_close(position)
+
                 else:
-                    self.close_position_market(position)
-                    message = (
-                        f"{position['symbol']} - "
-                        f"Prejuízo de {pnl_percent:.2f}%"
-                    )
-                    self.show_closed_positions_message(message)
-                    self.sound_closed_position_lose.play_sound()
+                    if not sl_ignored:
+                        self.close_position_market(position)
+                        message = f"{position['symbol']} - Prejuízo de {pnl_percent:.2f}%"
+                        self.show_closed_positions_message(message)
+                        self.sound_closed_position_lose.play_sound()
+                        delete_position = True
 
-                if self.auto_open_new_position:
-                    self.open_new_position_after_close(position)
+                        if self.auto_open_new_position:
+                            self.open_new_position_after_close(position)
 
+            if delete_position:
                 positions_to_delete.append(symbol)
-                continue
 
+        must_update = False
         for pid in positions_to_delete:
             if pid in self.position_trackers:
                 del self.position_trackers[pid]
                 print(f"Posição {pid} fechada automaticamente.")
-                self.save_position_trackers()
+                must_update = True
+
+        if must_update:
+            self.save_position_trackers()
 
     def open_new_position_after_close(self, closed_position):
         symbol = self.selected_symbol
@@ -916,7 +1005,7 @@ class MainWindow(QWidget):
                 return
 
             side = self.decision_value
-            # Check if side matches the selected trade direction option
+            # Check trade direction
             if self.trade_direction_option != 'both' and side != self.trade_direction_option and side in ['buy', 'sell']:
                 print(f"Sinal {side.upper()} não corresponde à direção selecionada ({self.trade_direction_option.upper()}).")
                 self.monitoring_signal = False
@@ -924,17 +1013,16 @@ class MainWindow(QWidget):
 
             if side in ['buy', 'sell']:
                 print(f"Sinal identificado: {side.upper()}. Armazenando preço atual e aguardando 1 minuto.")
-                stored_price = self.last_price  # Armazena o preço atual
+                stored_price = self.last_price
 
                 def after_wait():
                     if not self.monitoring_signal:
                         return
 
-                    current_price = self.last_price  # Obtém o preço atual após 1 minuto
+                    current_price = self.last_price
                     if side == 'buy':
                         if current_price > stored_price:
                             print(f"O preço aumentou de {stored_price} para {current_price}. Abrindo posição BUY.")
-                            # Prossegue para abrir a posição
                             position_details = open_new_position_market(symbol, side, size, leverage)
                             if position_details:
                                 self.position_trackers[symbol] = {
@@ -945,7 +1033,6 @@ class MainWindow(QWidget):
                                 }
                                 self.save_position_trackers()
                                 self.sound_open_position.play_sound()
-
                                 subject = f"Nova posição aberta: {symbol}"
                                 message = f"Nova posição aberta: {symbol} - {side.upper()} {leverage}x com {size} contratos."
                                 send_email_notification(subject, message)
@@ -956,7 +1043,6 @@ class MainWindow(QWidget):
                     elif side == 'sell':
                         if current_price < stored_price:
                             print(f"O preço diminuiu de {stored_price} para {current_price}. Abrindo posição SELL.")
-                            # Prossegue para abrir a posição
                             position_details = open_new_position_market(symbol, side, size, leverage)
                             if position_details:
                                 self.position_trackers[symbol] = {
@@ -967,7 +1053,6 @@ class MainWindow(QWidget):
                                 }
                                 self.save_position_trackers()
                                 self.sound_open_position.play_sound()
-
                                 subject = f"Nova posição aberta: {symbol}"
                                 message = f"Nova posição aberta: {symbol} - {side.upper()} {leverage}x com {size} contratos."
                                 send_email_notification(subject, message)
@@ -980,17 +1065,19 @@ class MainWindow(QWidget):
                     self.monitoring_signal = False
                     self.update_balance_label()
 
-                # Aguarda 1 minuto antes de verificar o preço novamente
+                # Aguarda 30 segundos
                 QTimer.singleShot(30000, after_wait)
             else:
-                # print("Sinal não identificado. Continuando monitoramento...")
                 QTimer.singleShot(5000, check_signal)
 
         check_signal()
 
     def check_decision_indicators(self):
         granularity = int(self.granularity)
-        decisions = decide_trade_direction(self.binance_symbol, self.rsi_period, self.use_sma, self.use_rsi, self.use_volume, granularity, self.use_high_low)
+        decisions = decide_trade_direction(
+            self.binance_symbol, self.rsi_period, self.use_sma,
+            self.use_rsi, self.use_volume, granularity, self.use_high_low
+        )
         self.decision_value = decisions['decision']
         self.sma_value = f"SMA: {decisions['sma']}"
         self.rsi_value = f"RSI: {decisions['rsi']}"
@@ -1016,9 +1103,13 @@ class MainWindow(QWidget):
         print(message)
 
     def close_position_market(self, position):
-        print(f"Fechando posição: {position['symbol']}")
+        """
+        Fechar posição:
+        Primeiro, checa se 'symbol' está em ignore_coins_list.
+        Se estiver, não fecha a posição. 
+        """
+        symbol = position.get('symbol', '')
 
-        symbol = position.get('symbol')
         avg_entry_price = position.get('avgEntryPrice', 0)
         real_leverage = position.get('realLeverage', 0)
         maint_margin = position.get('maintMargin', 0)
@@ -1052,7 +1143,23 @@ class MainWindow(QWidget):
             qtd = 0
         qtd_usdt = abs(qtd * avg_entry_price)
 
-        subject = f"Posição Fechada: {symbol}"
+        lucro_prejuizo = "Lucro" if adjusted_unrealised_pnl_value > 0 else "Prejuízo"
+
+        # Verificar se alguma das moedas ignoradas bate com o início do symbol
+        if lucro_prejuizo == "Prejuízo":
+            for coin in self.ignore_coins_sl_list:
+                if coin and symbol.startswith(coin):
+                    print(f"Não fechar posições no prejuízo de {coin}. Symbol: {symbol}")
+                    return
+        else:
+            for coin in self.ignore_coins_tp_list:
+                if coin and symbol.startswith(coin):
+                    print(f"Não fechar posições no lucro de {coin}. Symbol: {symbol}")
+                    return
+
+        print(f"Fechando posição: {symbol}")
+
+        subject = f"Posição Fechada {lucro_prejuizo}: {symbol}"
         message = (
             f"Detalhes da posição fechada:\n"
             f"Contrato: {symbol}\n"
@@ -1066,13 +1173,13 @@ class MainWindow(QWidget):
         )
 
         send_email_notification(subject, message)
-
         close_position_market(position)
 
         if symbol in self.position_trackers:
             del self.position_trackers[symbol]
             self.save_position_trackers()
             self.update_used_margin_calls_label(0)
+
         self.update_balance_label()
 
     def update_price_label(self, price):
@@ -1093,6 +1200,7 @@ class MainWindow(QWidget):
                 self.price_label.setStyleSheet("color: #ffffff;")
             self.last_updated_price_time = current_time
 
+        # Alerts de preço
         if self.alert_price_above > 0 and price >= self.alert_price_above:
             if not self.alert_above_triggered:
                 self.alert_above_triggered = True
@@ -1195,6 +1303,13 @@ class MainWindow(QWidget):
                 self.margin_calls = config.get('margin_calls', self.margin_calls)
                 self.trade_direction_option = config.get('trade_direction_option', self.trade_direction_option)
 
+                # Novo: ignorar moedas
+                self.ignore_coins_sl = config.get('ignore_coins_sl', self.ignore_coins_sl)
+                self.ignore_coins_sl_list = [c.strip() for c in self.ignore_coins_sl.split(',') if c.strip()]
+
+                self.ignore_coins_tp = config.get('ignore_coins_tp', self.ignore_coins_tp)
+                self.ignore_coins_tp_list = [c.strip() for c in self.ignore_coins_tp.split(',') if c.strip()]
+
             print("Configurações carregadas com sucesso.")
         except FileNotFoundError:
             print("Arquivo de configurações não encontrado. Usando configurações padrão.")
@@ -1225,7 +1340,10 @@ class MainWindow(QWidget):
                 'auto_open_new_position': self.auto_open_new_position,
                 'auto_close_positions': self.auto_close_positions,
                 'margin_calls': self.margin_calls,
-                'trade_direction_option': self.trade_direction_option
+                'trade_direction_option': self.trade_direction_option,
+                # salva ignore_coins
+                'ignore_coins_sl': self.ignore_coins_sl,
+                'ignore_coins_tp': self.ignore_coins_tp
             }
             with open('configurations.json', 'w') as f:
                 json.dump(config, f)

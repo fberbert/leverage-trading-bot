@@ -1,0 +1,8 @@
+[Desktop Entry]
+Name=Leverage Trading Bot
+Comment=Bot para monitorar e realizar operações de compra e venda de criptomoedas
+Exec=python3 /home/fabio/projetos/leverage-trading-bot/bybit/main.py
+Icon=/usr/share/icons/breeze/apps/48/bitcoin128.svg
+Terminal=false
+Type=Application
+Categories=Utility;
